@@ -15,9 +15,13 @@ import (
 	"github.com/google/uuid"
 	authApp "hscc/internal/modules/auth/app"
 	authTransport "hscc/internal/modules/auth/transport"
+	auditApp "hscc/internal/modules/audit/app"
+	auditTransport "hscc/internal/modules/audit/transport"
 	systemInfra "hscc/internal/modules/system/infra"
 	systemTransport "hscc/internal/modules/system/transport"
 	"hscc/internal/modules/telemetry"
+	workloadApp "hscc/internal/modules/workloads/app"
+	workloadTransport "hscc/internal/modules/workloads/transport"
 	"hscc/internal/platform/config"
 	"hscc/internal/platform/logging"
 	"hscc/internal/platform/security"
@@ -32,6 +36,8 @@ type Server struct {
 	telemetrySvc *telemetry.TelemetryService
 	jwtManager   *security.JWTManager
 	authSvc      *authApp.AuthService
+	auditSvc     *auditApp.AuditService
+	workloadSvc  *workloadApp.WorkloadService
 	webFS        fs.FS
 }
 
@@ -41,6 +47,8 @@ func NewServer(
 	telemetrySvc *telemetry.TelemetryService,
 	jwtManager *security.JWTManager,
 	authSvc *authApp.AuthService,
+	auditSvc *auditApp.AuditService,
+	workloadSvc *workloadApp.WorkloadService,
 	webFS fs.FS,
 ) *Server {
 	app := fiber.New(fiber.Config{
@@ -55,6 +63,8 @@ func NewServer(
 		telemetrySvc: telemetrySvc,
 		jwtManager:   jwtManager,
 		authSvc:      authSvc,
+		auditSvc:     auditSvc,
+		workloadSvc:  workloadSvc,
 		webFS:        webFS,
 	}
 
@@ -149,6 +159,18 @@ func (s *Server) setupRoutes() {
 	updateSvc := systemInfra.NewUpdateService(s.cfg, s.db)
 	sysH := systemTransport.NewSystemHandler(s.telemetrySvc, updateSvc)
 	sysH.RegisterRoutes(api, authMiddleware)
+
+	// Register Audit Routes (Immutable Audit Trail)
+	if s.auditSvc != nil {
+		auditH := auditTransport.NewAuditHandler(s.auditSvc)
+		auditH.RegisterRoutes(api, authMiddleware)
+	}
+
+	// Register Workloads Routes (100% Docker & systemd Observability & Guardrail Execution)
+	if s.workloadSvc != nil {
+		workloadH := workloadTransport.NewWorkloadsHandler(s.workloadSvc)
+		workloadH.RegisterRoutes(api, authMiddleware)
+	}
 
 	// Register Realtime WebSocket Route
 	wsH := wsTransport.NewMetricsWSHandler(s.telemetrySvc, s.jwtManager, s.cfg.AllowedOrigins)

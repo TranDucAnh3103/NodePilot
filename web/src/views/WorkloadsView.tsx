@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { motion } from 'motion/react'
 import {
   Layers,
@@ -9,102 +9,53 @@ import {
   Terminal,
   ShieldCheck,
   ShieldAlert,
-  Info,
-  CheckCircle2,
-  XCircle,
-  ExternalLink,
+  RefreshCw,
+  AlertCircle,
+  Clock,
+  HardDrive,
+  Cpu,
 } from 'lucide-react'
 import { spring, transition } from '../lib/motion'
 import { ConfirmModal } from '../components/ConfirmModal'
-
-interface ContainerItem {
-  id: string
-  name: string
-  image: string
-  state: 'running' | 'exited' | 'restarting' | 'paused'
-  statusText: string
-  ports: string[]
-  isAllowlisted: boolean
-  isDenylisted: boolean
-  cpuUsage: number
-  memUsageMiB: number
-}
-
-// Initial mock state reflecting 100% host containers discovery
-const INITIAL_CONTAINERS: ContainerItem[] = [
-  {
-    id: 'e4a9f3b10c82',
-    name: 'homeserver-caddy-proxy',
-    image: 'caddy:2.8.4-alpine',
-    state: 'running',
-    statusText: 'Up 18 days (healthy)',
-    ports: ['0.0.0.0:80->80/tcp', '0.0.0.0:443->443/tcp'],
-    isAllowlisted: false,
-    isDenylisted: true, // System critical proxy - Protected
-    cpuUsage: 0.4,
-    memUsageMiB: 32.5,
-  },
-  {
-    id: 'b1c8f9024a15',
-    name: 'nodepilot-app-demo',
-    image: 'nodepilot/demo:v1.2',
-    state: 'running',
-    statusText: 'Up 4 hours',
-    ports: ['127.0.0.1:3000->3000/tcp'],
-    isAllowlisted: true, // Allowlisted user workload
-    isDenylisted: false,
-    cpuUsage: 1.2,
-    memUsageMiB: 110.8,
-  },
-  {
-    id: '9df4e12055bc',
-    name: 'grafana-monitoring',
-    image: 'grafana/grafana:11.1.0',
-    state: 'running',
-    statusText: 'Up 6 days',
-    ports: ['127.0.0.1:3001->3000/tcp'],
-    isAllowlisted: true,
-    isDenylisted: false,
-    cpuUsage: 0.8,
-    memUsageMiB: 85.2,
-  },
-  {
-    id: '7a13c9550df1',
-    name: 'legacy-backup-worker',
-    image: 'homeserver/backup:2025.10',
-    state: 'exited',
-    statusText: 'Exited (0) 2 days ago',
-    ports: [],
-    isAllowlisted: true,
-    isDenylisted: false,
-    cpuUsage: 0.0,
-    memUsageMiB: 0.0,
-  },
-  {
-    id: '15d8a0c492ee',
-    name: 'tailscale-subnet-router',
-    image: 'tailscale/tailscale:v1.74.0',
-    state: 'running',
-    statusText: 'Up 21 days',
-    ports: [],
-    isAllowlisted: false,
-    isDenylisted: true, // Network foundation - Protected
-    cpuUsage: 0.2,
-    memUsageMiB: 28.4,
-  },
-]
+import { LogModal } from '../components/LogModal'
+import { Container } from '../types'
+import { getContainers, getContainerLogs, executeContainerAction } from '../lib/api'
 
 export const WorkloadsView: React.FC = () => {
-  const [containers, setContainers] = useState<ContainerItem[]>(INITIAL_CONTAINERS)
+  const [containers, setContainers] = useState<Container[]>([])
+  const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterMode, setFilterMode] = useState<'all' | 'running' | 'allowlisted'>('all')
 
   // Confirmation modal state
   const [activeModal, setActiveModal] = useState<{
-    target: ContainerItem
+    target: Container
     action: 'start' | 'stop' | 'restart' | 'kill'
   } | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+
+  // Log modal state
+  const [logModalTarget, setLogModalTarget] = useState<Container | null>(null)
+
+  const fetchWorkloads = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const data = await getContainers()
+      setContainers(data)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Không thể tải danh sách workloads'
+      setError(msg)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchWorkloads()
+  }, [fetchWorkloads])
 
   // Filter logic: 100% host containers are observable
   const filteredContainers = containers.filter((c) => {
@@ -119,32 +70,41 @@ export const WorkloadsView: React.FC = () => {
     return true
   })
 
-  const handleActionClick = (container: ContainerItem, action: 'start' | 'stop' | 'restart' | 'kill') => {
+  const handleActionClick = (container: Container, action: 'start' | 'stop' | 'restart' | 'kill') => {
+    setActionError(null)
     setActiveModal({ target: container, action })
   }
 
   const handleExecuteAction = async () => {
     if (!activeModal) return
     setIsProcessing(true)
+    setActionError(null)
 
-    // Simulate action execution with idempotency key
-    setTimeout(() => {
-      setContainers((prev) =>
-        prev.map((c) => {
-          if (c.id === activeModal.target.id) {
-            if (activeModal.action === 'stop' || activeModal.action === 'kill') {
-              return { ...c, state: 'exited', statusText: 'Exited just now' }
-            }
-            if (activeModal.action === 'start' || activeModal.action === 'restart') {
-              return { ...c, state: 'running', statusText: 'Up just now' }
-            }
-          }
-          return c
-        })
+    try {
+      const idempotencyKey = `idem-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+      const op = activeModal.action === 'kill' ? 'stop' : activeModal.action
+      await executeContainerAction(
+        activeModal.target.name,
+        op as 'start' | 'stop' | 'restart',
+        'Thao tác qua giao diện NodePilot HSCC',
+        idempotencyKey,
+        activeModal.target.project
       )
-      setIsProcessing(false)
+      await fetchWorkloads()
       setActiveModal(null)
-    }, 600)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Thao tác thất bại'
+      setActionError(msg)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const formatBytes = (bytes: number) => {
+    if (bytes <= 0) return '0 B'
+    const units = ['B', 'KiB', 'MiB', 'GiB']
+    const i = Math.floor(Math.log(bytes) / Math.log(1024))
+    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`
   }
 
   return (
@@ -173,8 +133,24 @@ export const WorkloadsView: React.FC = () => {
           <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300">
             {containers.length} Tổng containers
           </span>
+          <button
+            onClick={fetchWorkloads}
+            disabled={isLoading}
+            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer disabled:opacity-50"
+            title="Làm mới danh sách"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
+
+      {/* Action Error Alert */}
+      {actionError && (
+        <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-center space-x-3 text-xs text-rose-400">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span>{actionError}</span>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
@@ -223,10 +199,36 @@ export const WorkloadsView: React.FC = () => {
         </div>
       </div>
 
+      {/* Loading state */}
+      {isLoading && containers.length === 0 && (
+        <div className="text-center py-12 text-slate-400 text-xs bg-slate-900/40 rounded-2xl border border-slate-800 flex items-center justify-center space-x-2">
+          <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+          <span>Đang khám phá các workloads Docker trên máy chủ...</span>
+        </div>
+      )}
+
+      {/* Fetch Error state */}
+      {error && (
+        <div className="text-center py-8 text-rose-400 text-xs bg-rose-500/10 rounded-2xl border border-rose-500/20 space-y-2">
+          <div>Lỗi tải workloads: {error}</div>
+          <button
+            onClick={fetchWorkloads}
+            className="px-3 py-1 bg-rose-600 text-white rounded-lg hover:bg-rose-500 transition-colors cursor-pointer"
+          >
+            Thử lại
+          </button>
+        </div>
+      )}
+
       {/* Workloads List */}
       <div className="space-y-3">
         {filteredContainers.map((container) => {
           const isRunning = container.state === 'running'
+          const shortId = container.id.length > 12 ? container.id.substring(0, 12) : container.id
+          const portStrings = (container.ports || []).map((p) =>
+            p.publicPort ? `${p.publicPort}:${p.privatePort}/${p.type}` : `${p.privatePort}/${p.type}`
+          )
+
           return (
             <motion.div
               key={container.id}
@@ -246,11 +248,11 @@ export const WorkloadsView: React.FC = () => {
                     />
                     <h3 className="font-mono font-bold text-sm text-slate-100">{container.name}</h3>
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800">
-                      {container.id}
+                      {shortId}
                     </span>
 
                     {/* Guardrail Policy Tag */}
-                    {container.isDenylisted ? (
+                    {container.isProtected ? (
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center gap-1">
                         <ShieldAlert className="w-3 h-3" />
                         Denylist (Bảo vệ hệ thống)
@@ -270,11 +272,11 @@ export const WorkloadsView: React.FC = () => {
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400 pt-0.5">
                     <span className="font-mono text-slate-400">Image: {container.image}</span>
                     <span className="text-slate-500">•</span>
-                    <span className="font-mono">{container.statusText}</span>
-                    {container.ports.length > 0 && (
+                    <span className="font-mono">{container.status}</span>
+                    {portStrings.length > 0 && (
                       <>
                         <span className="text-slate-500">•</span>
-                        <span className="font-mono text-indigo-400">{container.ports.join(', ')}</span>
+                        <span className="font-mono text-indigo-400">{portStrings.join(', ')}</span>
                       </>
                     )}
                   </div>
@@ -284,14 +286,31 @@ export const WorkloadsView: React.FC = () => {
                 <div className="flex items-center space-x-4 self-end lg:self-center">
                   {isRunning && (
                     <div className="text-right font-mono text-xs text-slate-400 hidden sm:block">
-                      <div>CPU: {container.cpuUsage.toFixed(1)}%</div>
-                      <div>RAM: {container.memUsageMiB.toFixed(1)} MiB</div>
+                      <div className="flex items-center justify-end space-x-1">
+                        <Cpu className="w-3 h-3 text-indigo-400" />
+                        <span>CPU: {container.cpuPercent.toFixed(1)}%</span>
+                      </div>
+                      <div className="flex items-center justify-end space-x-1">
+                        <HardDrive className="w-3 h-3 text-teal-400" />
+                        <span>RAM: {formatBytes(container.memoryUsageBytes)}</span>
+                      </div>
                     </div>
                   )}
 
+                  {/* Logs button */}
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    transition={spring.press}
+                    onClick={() => setLogModalTarget(container)}
+                    className="p-2 text-slate-300 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer"
+                    title="Xem logs container"
+                  >
+                    <Terminal className="w-4 h-4" />
+                  </motion.button>
+
                   {/* Action buttons */}
                   <div className="flex items-center space-x-1.5">
-                    {container.isAllowlisted ? (
+                    {container.isAllowlisted && !container.isProtected ? (
                       <>
                         {isRunning ? (
                           <>
@@ -328,7 +347,7 @@ export const WorkloadsView: React.FC = () => {
                       </>
                     ) : (
                       <div className="text-[11px] text-slate-500 italic px-2 py-1 bg-slate-950/60 rounded-lg border border-slate-800">
-                        Thao tác bị khóa bởi chính sách
+                        {container.isProtected ? 'Bảo vệ hệ thống' : 'Thao tác bị khóa bởi chính sách'}
                       </div>
                     )}
                   </div>
@@ -338,7 +357,7 @@ export const WorkloadsView: React.FC = () => {
           )
         })}
 
-        {filteredContainers.length === 0 && (
+        {!isLoading && filteredContainers.length === 0 && (
           <div className="text-center py-12 text-slate-500 text-xs bg-slate-900/40 rounded-2xl border border-slate-800">
             Không tìm thấy container nào khớp với tiêu chí tìm kiếm.
           </div>
@@ -354,7 +373,21 @@ export const WorkloadsView: React.FC = () => {
           actionType={activeModal.action}
           isProcessing={isProcessing}
           onConfirm={handleExecuteAction}
-          onCancel={() => setActiveModal(null)}
+          onCancel={() => {
+            setActiveModal(null)
+            setActionError(null)
+          }}
+        />
+      )}
+
+      {/* Container Logs Modal */}
+      {logModalTarget && (
+        <LogModal
+          isOpen={true}
+          title={`Logs: ${logModalTarget.name}`}
+          subtitle={`Container ID: ${logModalTarget.id.substring(0, 12)} • Image: ${logModalTarget.image}`}
+          fetchLogs={() => getContainerLogs(logModalTarget.id, 200)}
+          onClose={() => setLogModalTarget(null)}
         />
       )}
     </motion.div>

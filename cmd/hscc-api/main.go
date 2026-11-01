@@ -9,10 +9,15 @@ import (
 	"time"
 
 	"hscc"
+	auditApp "hscc/internal/modules/audit/app"
+	auditInfra "hscc/internal/modules/audit/infra"
 	authApp "hscc/internal/modules/auth/app"
 	authInfra "hscc/internal/modules/auth/infra"
+	"hscc/internal/modules/guardrail"
 	systemInfra "hscc/internal/modules/system/infra"
 	"hscc/internal/modules/telemetry"
+	workloadApp "hscc/internal/modules/workloads/app"
+	workloadInfra "hscc/internal/modules/workloads/infra"
 	"hscc/internal/platform/config"
 	"hscc/internal/platform/logging"
 	"hscc/internal/platform/security"
@@ -63,12 +68,28 @@ func main() {
 	telemetrySvc := telemetry.NewTelemetryService(collector, 120, cfg.MaxWSClients)
 	telemetrySvc.Start(ctx, time.Duration(cfg.CollectIntervalS)*time.Second)
 
-	// 6. Initialize HTTP & WS Server with Embedded Static Web UI
+	// 6. Initialize Audit Trail Module
+	auditRepo := auditInfra.NewAuditRepository(db)
+	auditSvc := auditApp.NewAuditService(auditRepo)
+
+	// 7. Initialize Workloads & Guardrail Policy Engine
+	policyPath := "/etc/hscc/helper-policy.yaml"
+	if _, err := os.Stat("/etc/hscc"); os.IsNotExist(err) {
+		policyPath = "./data/helper-policy.yaml"
+	}
+	policyEngine := guardrail.NewPolicyEngine(policyPath)
+
+	dockerClient := workloadInfra.NewDockerClient("")
+	systemdClient := workloadInfra.NewSystemdClient()
+	actionRepo := workloadInfra.NewActionRepository(db)
+	workloadSvc := workloadApp.NewWorkloadService(dockerClient, systemdClient, policyEngine, actionRepo, auditSvc)
+
+	// 8. Initialize HTTP & WS Server with Embedded Static Web UI
 	webFS, err := hscc.GetWebFS()
 	if err != nil {
 		slog.Warn("embedded web UI not available", slog.String("error", err.Error()))
 	}
-	server := http.NewServer(cfg, db, telemetrySvc, jwtMgr, authSvc, webFS)
+	server := http.NewServer(cfg, db, telemetrySvc, jwtMgr, authSvc, auditSvc, workloadSvc, webFS)
 
 	// Handle Graceful Shutdown
 	sigChan := make(chan os.Signal, 1)

@@ -1,0 +1,12 @@
+# NodePilot HSCC — Helper Guardrail Policy Configuration
+# Place this file at /etc/hscc/helper-policy.yaml (owned by root:root, mode 0640)
+version: 1
+allowlist:
+  docker:
+    - name: "wavelink-backend"
+      actions: ["restart", "start", "stop"]
+    - project: "wavelink"
+      actions: ["restart", "start", "stop"]
+  systemd:
+    - unit: "nodepilot-agent.service"
+      actions: ["restart"]

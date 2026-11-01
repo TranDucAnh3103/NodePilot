@@ -98,3 +98,64 @@ export interface TriggerResult {
   message: string
   triggeredAt: string
 }
+
+export interface PortMapping {
+  ip?: string
+  privatePort: number
+  publicPort?: number
+  type: string
+}
+
+export interface Container {
+  id: string
+  name: string
+  image: string
+  state: 'running' | 'exited' | 'paused' | 'restarting' | string
+  status: string
+  healthStatus: 'healthy' | 'unhealthy' | 'starting' | 'none' | string
+  project: string
+  ports: PortMapping[]
+  cpuPercent: number
+  memoryUsageBytes: number
+  memoryLimitBytes: number
+  restartCount: number
+  created: string
+  isAllowlisted: boolean
+  isProtected: boolean
+  allowedActions: string[]
+}
+
+export interface ServiceUnit {
+  name: string
+  description: string
+  loadState: string
+  activeState: 'active' | 'inactive' | 'failed' | string
+  subState: string
+  mainPid: number
+  category: 'core_protected' | 'application' | 'system' | string
+  isProtected: boolean
+  isAllowlisted: boolean
+  allowedActions: string[]
+}
+
+export interface AuditEvent {
+  id: string
+  timestamp: string
+  actorId: string
+  actorUsername: string
+  verb: string
+  target: string
+  targetType: string
+  targetId: string
+  result: 'success' | 'denied' | 'failed' | string
+  requestId: string
+  ipAddress: string
+  detailsRedactedJson?: string
+}
+
+export interface AuditQueryResponse {
+  items: AuditEvent[]
+  total: number
+  page: number
+  pageSize: number
+}

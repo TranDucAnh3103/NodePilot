@@ -1,4 +1,14 @@
-import { HostSnapshot, User, UpdateCheckResult, VersionInfo, TriggerResult } from '../types'
+import {
+  HostSnapshot,
+  User,
+  UpdateCheckResult,
+  VersionInfo,
+  TriggerResult,
+  Container,
+  ServiceUnit,
+  AuditEvent,
+  AuditQueryResponse,
+} from '../types'
 
 let inMemoryToken: string | null = null
 
@@ -116,5 +126,97 @@ export async function triggerUpdate(): Promise<TriggerResult> {
   })
   const json = await res.json()
   if (!res.ok) throw new Error(json.error?.message || 'Kích hoạt cập nhật Watchtower thất bại')
+  return json.data
+}
+
+// --- Sprint 2: Workloads & Audit Endpoints ---
+
+export async function getContainers(): Promise<Container[]> {
+  const res = await fetchWithAuth('/api/v1/workloads/docker')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải danh sách containers')
+  return json.data || []
+}
+
+export async function getContainerLogs(id: string, tail: number = 200): Promise<string> {
+  const res = await fetchWithAuth(`/api/v1/workloads/docker/${encodeURIComponent(id)}/logs?tail=${tail}`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải logs container')
+  return json.data?.logs || ''
+}
+
+export async function executeContainerAction(
+  name: string,
+  operation: 'start' | 'stop' | 'restart',
+  reason: string,
+  idempotencyKey: string,
+  project?: string
+): Promise<void> {
+  const query = project ? `?project=${encodeURIComponent(project)}` : ''
+  const res = await fetchWithAuth(`/api/v1/workloads/docker/${encodeURIComponent(name)}/action${query}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
+    },
+    body: JSON.stringify({ operation, reason }),
+  })
+  const json = await res.json()
+  if (!res.ok) {
+    throw new Error(json.error?.message || `Thao tác ${operation} thất bại`)
+  }
+}
+
+export async function getServices(): Promise<ServiceUnit[]> {
+  const res = await fetchWithAuth('/api/v1/workloads/systemd')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải danh sách systemd services')
+  return json.data || []
+}
+
+export async function getServiceLogs(name: string, tail: number = 200): Promise<string> {
+  const res = await fetchWithAuth(`/api/v1/workloads/systemd/${encodeURIComponent(name)}/logs?tail=${tail}`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải logs service')
+  return json.data?.logs || ''
+}
+
+export async function executeServiceAction(
+  name: string,
+  operation: 'start' | 'stop' | 'restart',
+  reason: string,
+  idempotencyKey: string
+): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/workloads/systemd/${encodeURIComponent(name)}/action`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
+    },
+    body: JSON.stringify({ operation, reason }),
+  })
+  const json = await res.json()
+  if (!res.ok) {
+    throw new Error(json.error?.message || `Thao tác ${operation} thất bại`)
+  }
+}
+
+export async function getAuditEvents(params?: {
+  page?: number
+  pageSize?: number
+  keyword?: string
+  result?: string
+  verb?: string
+}): Promise<AuditQueryResponse> {
+  const searchParams = new URLSearchParams()
+  if (params?.page) searchParams.set('page', params.page.toString())
+  if (params?.pageSize) searchParams.set('pageSize', params.pageSize.toString())
+  if (params?.keyword) searchParams.set('keyword', params.keyword)
+  if (params?.result) searchParams.set('result', params.result)
+  if (params?.verb) searchParams.set('verb', params.verb)
+
+  const res = await fetchWithAuth(`/api/v1/audit?${searchParams.toString()}`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải nhật ký kiểm toán')
   return json.data
 }
