@@ -97,9 +97,9 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center space-x-6 text-xs text-slate-300">
+          <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-xs text-slate-300">
             <div className="flex items-center space-x-2">
-              <Clock className="w-4 h-4 text-indigo-400" />
+              <Clock className="w-4 h-4 text-indigo-400 shrink-0" />
               <div>
                 <span className="text-[10px] text-slate-500 block uppercase font-mono">Thời gian hoạt động</span>
                 <span className="font-semibold text-slate-200">{formatUptime(host.uptimeSeconds)}</span>
@@ -107,7 +107,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             </div>
 
             <div className="flex items-center space-x-2">
-              <Thermometer className="w-4 h-4 text-emerald-400" />
+              <Thermometer className="w-4 h-4 text-emerald-400 shrink-0" />
               <div>
                 <span className="text-[10px] text-slate-500 block uppercase font-mono">Nhiệt độ CPU</span>
                 <span className="font-semibold text-slate-200">
@@ -119,7 +119,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             </div>
 
             <div className="flex items-center space-x-2">
-              <ShieldCheck className="w-4 h-4 text-teal-400" />
+              <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
               <div>
                 <span className="text-[10px] text-slate-500 block uppercase font-mono">Bảo mật máy chủ</span>
                 <span className="font-semibold text-teal-300">Allowlist Active</span>
@@ -130,7 +130,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       </div>
 
       {/* 2. Top Metric Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* CPU Card */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between">
           <div>

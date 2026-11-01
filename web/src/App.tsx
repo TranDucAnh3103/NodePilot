@@ -33,6 +33,7 @@ export function App() {
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false)
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   // In-memory histories for ECharts (up to 60 points)
   const [cpuHistory, setCpuHistory] = useState<Array<{ time: string; value: number }>>([])
@@ -172,6 +173,8 @@ export function App() {
         isStale={isStale}
         hasUpdate={updateInfo?.hasUpdate}
         isCheckingUpdate={isCheckingUpdate}
+        isMobileMenuOpen={isMobileMenuOpen}
+        onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         onOpenUpdateModal={() => {
           setIsUpdateModalOpen(true)
           if (!updateInfo) handleCheckUpdate()
@@ -181,7 +184,7 @@ export function App() {
 
       {/* Active System Alerts Banner */}
       {(activeAlerts || []).length > 0 && activeAlerts[0] && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 flex items-center justify-between text-xs text-amber-300">
+        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 sm:px-6 py-2.5 flex items-center justify-between text-xs text-amber-300">
           <div className="flex items-center space-x-2.5 overflow-x-auto">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-400" />
             <span className="font-bold">Cảnh báo tài nguyên:</span>
@@ -205,9 +208,15 @@ export function App() {
       <StaleBanner isStale={isStale} />
 
       <div className="flex-1 flex overflow-hidden">
-        <Sidebar currentTab={currentTab} onTabChange={setCurrentTab} currentUser={currentUser} />
+        <Sidebar
+          currentTab={currentTab}
+          onTabChange={setCurrentTab}
+          currentUser={currentUser}
+          isMobileOpen={isMobileMenuOpen}
+          onCloseMobile={() => setIsMobileMenuOpen(false)}
+        />
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-8">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-8">
           <div className="max-w-7xl mx-auto">
             <AnimatePresence mode="wait">
               <motion.div

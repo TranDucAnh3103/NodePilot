@@ -133,8 +133,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         className="w-full max-w-md"
       >
         <div className="text-center mb-8">
-          <div className="inline-flex p-3 rounded-2xl bg-indigo-600/15 text-indigo-400 border border-indigo-500/20 mb-4 shadow-xl shadow-indigo-600/10">
-            <Server className="w-8 h-8" />
+          <div className="inline-flex p-3 rounded-2xl bg-slate-900/90 border border-indigo-500/30 mb-4 shadow-xl shadow-indigo-600/20">
+            <img src="/icon.svg" alt="NodePilot HSCC" className="w-12 h-12 object-contain" />
           </div>
           <h1 className="text-2xl font-bold text-slate-100 tracking-tight">NodePilot HSCC</h1>
           <p className="text-sm text-slate-400 mt-1">Bảng điều khiển máy chủ cá nhân</p>

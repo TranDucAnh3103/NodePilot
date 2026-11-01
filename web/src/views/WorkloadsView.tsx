@@ -173,10 +173,10 @@ export const WorkloadsView: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center space-x-2 w-full sm:w-auto">
+        <div className="flex items-center space-x-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
           <button
             onClick={() => setFilterMode('all')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium cursor-pointer transition-colors ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium cursor-pointer transition-colors whitespace-nowrap ${
               filterMode === 'all'
                 ? 'bg-indigo-600 text-white'
                 : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
@@ -186,7 +186,7 @@ export const WorkloadsView: React.FC = () => {
           </button>
           <button
             onClick={() => setFilterMode('running')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium cursor-pointer transition-colors ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium cursor-pointer transition-colors whitespace-nowrap ${
               filterMode === 'running'
                 ? 'bg-indigo-600 text-white'
                 : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
@@ -196,7 +196,7 @@ export const WorkloadsView: React.FC = () => {
           </button>
           <button
             onClick={() => setFilterMode('allowlisted')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium cursor-pointer transition-colors ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium cursor-pointer transition-colors whitespace-nowrap ${
               filterMode === 'allowlisted'
                 ? 'bg-indigo-600 text-white'
                 : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
