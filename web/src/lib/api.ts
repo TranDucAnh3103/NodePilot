@@ -18,6 +18,18 @@ import {
   MetricSeries,
 } from '../types'
 
+export const API_BASE_URL = (
+  (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL)) ||
+  ''
+).replace(/\/$/, '')
+
+export function buildApiUrl(path: string): string {
+  if (!API_BASE_URL || path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+  return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
+}
+
 let inMemoryToken: string | null = null
 
 export function setAccessToken(token: string | null) {
@@ -29,9 +41,10 @@ export function getAccessToken(): string | null {
 }
 
 export async function login(username: string, password: string): Promise<{ accessToken: string; user: User }> {
-  const res = await fetch('/api/v1/auth/login', {
+  const res = await fetch(buildApiUrl('/api/v1/auth/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ username, password }),
   })
 
@@ -45,9 +58,10 @@ export async function login(username: string, password: string): Promise<{ acces
 }
 
 export async function refreshToken(): Promise<string> {
-  const res = await fetch('/api/v1/auth/refresh', {
+  const res = await fetch(buildApiUrl('/api/v1/auth/refresh'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   })
 
   const json = await res.json()
@@ -62,7 +76,10 @@ export async function refreshToken(): Promise<string> {
 
 export async function logout(): Promise<void> {
   try {
-    await fetch('/api/v1/auth/logout', { method: 'POST' })
+    await fetch(buildApiUrl('/api/v1/auth/logout'), {
+      method: 'POST',
+      credentials: 'include',
+    })
   } finally {
     setAccessToken(null)
   }
@@ -97,14 +114,21 @@ export async function fetchWithAuth(url: string, options: RequestInit = {}): Pro
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  let res = await fetch(url, { ...options, headers })
+  const fullUrl = buildApiUrl(url)
+  const reqOptions: RequestInit = {
+    ...options,
+    headers,
+    credentials: 'include',
+  }
+
+  let res = await fetch(fullUrl, reqOptions)
 
   // Auto-refresh token if 401
   if (res.status === 401) {
     try {
       token = await refreshToken()
       headers.set('Authorization', `Bearer ${token}`)
-      res = await fetch(url, { ...options, headers })
+      res = await fetch(fullUrl, { ...reqOptions, headers })
     } catch {
       // Re-authentication failed
       setAccessToken(null)

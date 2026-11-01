@@ -84,7 +84,14 @@ func LoadConfig() *Config {
 
 	production := runtime.GOOS == "linux" && dirExists("/etc/hscc")
 
-	origins := []string{"http://127.0.0.1:17880", "http://localhost:17880", "http://localhost:5173", "http://127.0.0.1:5173"}
+	origins := []string{
+		"http://127.0.0.1:17880",
+		"http://localhost:17880",
+		"http://localhost:5173",
+		"http://127.0.0.1:5173",
+		"https://*.vercel.app",
+		"https://vercel.app",
+	}
 	for _, o := range strings.Split(os.Getenv("HSCC_ALLOWED_ORIGINS"), ",") {
 		o = strings.TrimRight(strings.TrimSpace(o), "/")
 		if o != "" {

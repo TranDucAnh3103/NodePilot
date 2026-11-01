@@ -1,5 +1,5 @@
 import { HostSnapshot, Alert } from '../types'
-import { getAccessToken, refreshToken } from './api'
+import { getAccessToken, refreshToken, API_BASE_URL } from './api'
 
 type SnapshotCallback = (snapshot: HostSnapshot) => void
 type StaleCallback = (stale: boolean) => void
@@ -49,9 +49,22 @@ export class MetricsWebSocketClient {
       return
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.host
-    const wsUrl = `${protocol}//${host}/ws/metrics`
+    let wsUrl: string
+    if (API_BASE_URL) {
+      try {
+        const url = new URL(API_BASE_URL.startsWith('http') ? API_BASE_URL : `https://${API_BASE_URL}`)
+        const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+        wsUrl = `${protocol}//${url.host}/ws/metrics`
+      } catch {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+        const host = window.location.host
+        wsUrl = `${protocol}//${host}/ws/metrics`
+      }
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const host = window.location.host
+      wsUrl = `${protocol}//${host}/ws/metrics`
+    }
 
     try {
       this.ws = new WebSocket(wsUrl)
