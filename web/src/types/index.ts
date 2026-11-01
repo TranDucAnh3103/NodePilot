@@ -1,8 +1,21 @@
+export type UserRole = 'admin' | 'operator' | 'viewer'
+
 export interface User {
   id: string
   username: string
-  role: 'admin' | 'viewer'
+  role: UserRole
+  enabled?: boolean
   createdAt?: string
+}
+
+export interface SMTPConfig {
+  host: string
+  port: number
+  username: string
+  password?: string
+  fromName: string
+  appName: string
+  hasPass?: boolean
 }
 
 export interface HostInfo {

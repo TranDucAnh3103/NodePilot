@@ -22,15 +22,21 @@ func NewWorkloadsHandler(svc *app.WorkloadService) *WorkloadsHandler {
 func (h *WorkloadsHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler) {
 	group := router.Group("/workloads", authMiddleware)
 
-	// Docker Containers
+	// Docker Containers (support both /containers and /docker)
 	group.Get("/containers", h.ListContainers)
+	group.Get("/docker", h.ListContainers)
 	group.Get("/containers/:id/logs", h.GetContainerLogs)
+	group.Get("/docker/:id/logs", h.GetContainerLogs)
 	group.Post("/containers/:name/action", h.ExecuteContainerAction)
+	group.Post("/docker/:name/action", h.ExecuteContainerAction)
 
-	// Systemd Services
+	// Systemd Services (support both /services and /systemd)
 	group.Get("/services", h.ListServices)
+	group.Get("/systemd", h.ListServices)
 	group.Get("/services/:name/logs", h.GetServiceLogs)
+	group.Get("/systemd/:name/logs", h.GetServiceLogs)
 	group.Post("/services/:name/action", h.ExecuteServiceAction)
+	group.Post("/systemd/:name/action", h.ExecuteServiceAction)
 }
 
 func (h *WorkloadsHandler) ListContainers(c fiber.Ctx) error {

@@ -237,7 +237,7 @@ export function App() {
                 {currentTab === 'tasks' && <TasksView />}
                 {currentTab === 'files' && <FilesView />}
                 {currentTab === 'audit' && <AuditView />}
-                {currentTab === 'settings' && <SettingsView />}
+                {currentTab === 'settings' && <SettingsView currentUser={currentUser} />}
               </motion.div>
             </AnimatePresence>
           </div>

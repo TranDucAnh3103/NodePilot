@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -30,46 +32,158 @@ func (sc *SystemdClient) ListServices(ctx context.Context) ([]*domain.ServiceUni
 		return sc.getSimulatedServices(), nil
 	}
 
+	// 1. Try systemctl list-units if available in PATH
 	cmd := exec.CommandContext(ctx, "systemctl", "list-units", "--type=service", "--all", "--no-legend", "--no-pager")
 	out, err := cmd.Output()
-	if err != nil {
-		// If systemctl fails or not in container, fallback to simulated
-		return sc.getSimulatedServices(), nil
+	if err == nil && len(out) > 0 {
+		var services []*domain.ServiceUnit
+		scanner := bufio.NewScanner(bytes.NewReader(out))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) < 4 {
+				continue
+			}
+
+			unitName := fields[0]
+			loadState := fields[1]
+			activeState := fields[2]
+			subState := fields[3]
+			desc := ""
+			if len(fields) > 4 {
+				desc = strings.Join(fields[4:], " ")
+			}
+
+			s := &domain.ServiceUnit{
+				Name:        unitName,
+				Description: desc,
+				LoadState:   loadState,
+				ActiveState: activeState,
+				SubState:    subState,
+				MainPID:     0,
+			}
+			services = append(services, s)
+		}
+		if len(services) > 0 {
+			return services, nil
+		}
 	}
 
-	var services []*domain.ServiceUnit
-	scanner := bufio.NewScanner(bytes.NewReader(out))
+	// 2. Fallback: Scan host systemd directories (/run/systemd/units, /etc/systemd/system, /lib/systemd/system)
+	hostUnits := sc.scanHostDirectories()
+	if len(hostUnits) > 0 {
+		return hostUnits, nil
+	}
+
+	// 3. Fallback to simulated services
+	return sc.getSimulatedServices(), nil
+}
+
+func (sc *SystemdClient) scanHostDirectories() []*domain.ServiceUnit {
+	activeMap := make(map[string]bool)
+
+	// Check /run/systemd/units for active invocation symlinks
+	if entries, err := os.ReadDir("/run/systemd/units"); err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasPrefix(name, "invocation:") {
+				unitName := strings.TrimPrefix(name, "invocation:")
+				activeMap[unitName] = true
+			}
+		}
+	}
+
+	serviceDirs := []string{
+		"/etc/systemd/system",
+		"/lib/systemd/system",
+		"/usr/lib/systemd/system",
+		"/run/systemd/system",
+	}
+
+	seen := make(map[string]bool)
+	var result []*domain.ServiceUnit
+
+	for _, dir := range serviceDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".service") {
+				continue
+			}
+
+			unitName := e.Name()
+			if seen[unitName] {
+				continue
+			}
+			seen[unitName] = true
+
+			// Extract description from unit file
+			filePath := filepath.Join(dir, unitName)
+			desc := extractDescription(filePath)
+			if desc == "" {
+				desc = strings.TrimSuffix(unitName, ".service")
+			}
+
+			isActive := activeMap[unitName]
+			activeState := "inactive"
+			subState := "dead"
+			if isActive {
+				activeState = "active"
+				subState = "running"
+			}
+
+			unit := &domain.ServiceUnit{
+				Name:        unitName,
+				Description: desc,
+				LoadState:   "loaded",
+				ActiveState: activeState,
+				SubState:    subState,
+				MainPID:     0,
+			}
+
+			// Tag core protected services
+			baseName := strings.TrimSuffix(unitName, ".service")
+			switch baseName {
+			case "ssh", "sshd", "tailscaled", "cloudflared", "nginx", "caddy", "docker", "containerd", "dbus", "hscc-api", "hscc-helper":
+				unit.Category = "core_protected"
+				unit.IsProtected = true
+			default:
+				if strings.HasPrefix(baseName, "systemd-") {
+					unit.Category = "core_protected"
+					unit.IsProtected = true
+				} else {
+					unit.Category = "application"
+				}
+			}
+
+			result = append(result, unit)
+		}
+	}
+
+	return result
+}
+
+func extractDescription(filePath string) string {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+		if strings.HasPrefix(line, "Description=") {
+			return strings.TrimPrefix(line, "Description=")
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 4 {
-			continue
-		}
-
-		unitName := fields[0]
-		loadState := fields[1]
-		activeState := fields[2]
-		subState := fields[3]
-		desc := ""
-		if len(fields) > 4 {
-			desc = strings.Join(fields[4:], " ")
-		}
-
-		s := &domain.ServiceUnit{
-			Name:        unitName,
-			Description: desc,
-			LoadState:   loadState,
-			ActiveState: activeState,
-			SubState:    subState,
-			MainPID:     0,
-		}
-		services = append(services, s)
 	}
-
-	return services, nil
+	return ""
 }
 
 func (sc *SystemdClient) GetServiceLogs(ctx context.Context, unitName string, tailLines int) (string, error) {

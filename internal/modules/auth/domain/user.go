@@ -20,16 +20,19 @@ var (
 	ErrInvalidOTP           = errors.New("invalid or expired OTP code")
 )
 
+type Role = string
+
 const (
-	RoleAdmin  = "admin"
-	RoleViewer = "viewer"
+	RoleAdmin    Role = "admin"
+	RoleOperator Role = "operator"
+	RoleViewer   Role = "viewer"
 )
 
 type User struct {
 	ID           string    `json:"id"`
 	Username     string    `json:"username"`
 	PasswordHash string    `json:"-"`
-	Role         string    `json:"role"`
+	Role         Role      `json:"role"`
 	Enabled      bool      `json:"enabled"`
 	CreatedAt    time.Time `json:"createdAt"`
 }
@@ -41,6 +44,15 @@ type Session struct {
 	ExpiresAt  time.Time  `json:"expiresAt"`
 	RevokedAt  *time.Time `json:"revokedAt,omitempty"`
 	CreatedAt  time.Time  `json:"createdAt"`
+}
+
+type SMTPConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	FromName string `json:"fromName"`
+	AppName  string `json:"appName"`
 }
 
 func (s *Session) IsActive(now time.Time) bool {

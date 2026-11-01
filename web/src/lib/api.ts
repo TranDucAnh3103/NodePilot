@@ -16,6 +16,7 @@ import {
   Alert,
   PowerStatus,
   MetricSeries,
+  SMTPConfig,
 } from '../types'
 
 export const API_BASE_URL = (
@@ -377,5 +378,94 @@ export async function getHistorySeries(metric: string = 'cpu.usage', scope: stri
   const res = await fetchWithAuth(`/api/v1/system/history/series?metric=${encodeURIComponent(metric)}&scope=${encodeURIComponent(scope)}&duration=${encodeURIComponent(duration)}`)
   const json = await res.json()
   if (!res.ok) throw new Error(json.error?.message || 'Không thể tải chuỗi số liệu lịch sử')
+  return json.data
+}
+
+export async function getAccounts(): Promise<User[]> {
+  const res = await fetchWithAuth('/api/v1/auth/accounts')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải danh sách tài khoản')
+  return json.data || []
+}
+
+export async function createAccount(username: string, password: string, role: string): Promise<User> {
+  const res = await fetchWithAuth('/api/v1/auth/accounts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, role }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tạo tài khoản mới')
+  return json.data
+}
+
+export async function updateAccountRole(id: string, role: string): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/auth/accounts/${encodeURIComponent(id)}/role`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể cập nhật quyền tài khoản')
+}
+
+export async function deleteAccount(id: string): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/auth/accounts/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể xóa tài khoản')
+}
+
+export async function getEmailAllowlist(): Promise<string[]> {
+  const res = await fetchWithAuth('/api/v1/auth/otp/allowlist')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải danh sách Gmail allowlist')
+  return json.data || []
+}
+
+export async function addEmailAllowlist(email: string): Promise<void> {
+  const res = await fetchWithAuth('/api/v1/auth/otp/allowlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể thêm Gmail vào allowlist')
+}
+
+export async function removeEmailAllowlist(email: string): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/auth/otp/allowlist/${encodeURIComponent(email)}`, {
+    method: 'DELETE',
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể xóa Gmail khỏi allowlist')
+}
+
+export async function getSMTPConfig(): Promise<SMTPConfig> {
+  const res = await fetchWithAuth('/api/v1/auth/smtp/config')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải cấu hình SMTP')
+  return json.data
+}
+
+export async function updateSMTPConfig(config: Partial<SMTPConfig>): Promise<void> {
+  const res = await fetchWithAuth('/api/v1/auth/smtp/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể lưu cấu hình SMTP')
+}
+
+export async function testSMTP(targetEmail?: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetchWithAuth('/api/v1/auth/smtp/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetEmail }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Gửi thử nghiệm SMTP thất bại')
   return json.data
 }

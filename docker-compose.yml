@@ -6,6 +6,10 @@ services:
       dockerfile: Dockerfile
     container_name: nodepilot-hscc-api
     restart: unless-stopped
+    pid: "host"
+    group_add:
+      - "988"
+      - "0"
     ports:
       - "17880:17880"
     environment:
@@ -18,7 +22,6 @@ services:
       - WATCHTOWER_HTTP_TOKEN=${WATCHTOWER_TOKEN:-nodepilot-watchtower-auth-token}
       - GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-TranDucAnh3103/NodePilot}
       - HSCC_VERSION=${HSCC_VERSION:-v1.0.0}
-      - HSCC_COMMIT=${HSCC_COMMIT:-ede5c8b}
     labels:
       - "com.centurylinklabs.watchtower.scope=nodepilot"
     volumes:
@@ -29,6 +32,10 @@ services:
       # Host kernel and system stats
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
+      # Systemd unit files and states on host
+      - /run/systemd/units:/run/systemd/units:ro
+      - /lib/systemd/system:/lib/systemd/system:ro
+      - /etc/systemd/system:/etc/systemd/system:ro
       # Privileged root helper IPC socket
       - /run/hscc:/run/hscc:ro
     depends_on:

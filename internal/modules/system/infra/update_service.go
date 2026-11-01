@@ -139,15 +139,31 @@ func (s *UpdateService) CheckUpdate(ctx context.Context) (*UpdateCheckResult, er
 			shortCurrent = shortCurrent[:7]
 		}
 
+		// Check if a newer commit was already installed in system_metadata
+		var dbInstalledCommit string
+		_ = s.db.QueryRowContext(ctx, "SELECT value FROM system_metadata WHERE key = 'installed_commit'").Scan(&dbInstalledCommit)
+		if dbInstalledCommit != "" {
+			shortCurrent = dbInstalledCommit
+			if len(shortCurrent) > 7 {
+				shortCurrent = shortCurrent[:7]
+			}
+		}
+
+		result.CurrentCommit = shortCurrent
 		result.LatestCommit = shortLatest
 		result.CommitMessage = strings.Split(commits[0].Commit.Message, "\n")[0]
 		result.Author = commits[0].Commit.Author.Name
 		result.PublishedAt = commits[0].Commit.Author.Date.Format(time.RFC3339)
 
-		// Compare short hashes
-		if shortCurrent != "" && shortCurrent != "dev" && !strings.HasPrefix(latestSHA, shortCurrent) {
+		// Compare hashes: Only show update if commits genuinely differ
+		if shortCurrent != "" && shortCurrent != "dev" && !strings.HasPrefix(latestSHA, shortCurrent) && shortCurrent != shortLatest {
 			result.HasUpdate = true
 			result.LatestVersion = "Latest (Git " + shortLatest + ")"
+		} else {
+			result.HasUpdate = false
+			result.CurrentCommit = shortLatest
+			result.LatestCommit = shortLatest
+			result.LatestVersion = result.CurrentVersion
 		}
 	}
 
@@ -157,6 +173,34 @@ func (s *UpdateService) CheckUpdate(ctx context.Context) (*UpdateCheckResult, er
 // TriggerUpdate calls Watchtower HTTP API to perform zero-downtime container update
 func (s *UpdateService) TriggerUpdate(ctx context.Context, actorID string, reqID string) (*TriggerResult, error) {
 	now := time.Now().UTC()
+
+	// 1. Ensure system_metadata table exists and query latest commit to mark as installed
+	_, _ = s.db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS system_metadata (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMP)")
+	
+	// Query latest commit from GitHub to store as installed
+	repo := s.cfg.GitHubRepo
+	if repo == "" {
+		repo = "TranDucAnh3103/NodePilot"
+	}
+	reqURL := fmt.Sprintf("https://api.github.com/repos/%s/commits?per_page=1", repo)
+	if req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil); err == nil {
+		req.Header.Set("User-Agent", "NodePilot-HSCC/1.0")
+		if resp, err := s.httpClient.Do(req); err == nil && resp.StatusCode == http.StatusOK {
+			defer resp.Body.Close()
+			var commits []struct {
+				SHA string `json:"sha"`
+			}
+			if b, err := io.ReadAll(resp.Body); err == nil {
+				if err := json.Unmarshal(b, &commits); err == nil && len(commits) > 0 {
+					shortSha := commits[0].SHA
+					if len(shortSha) > 7 {
+						shortSha = shortSha[:7]
+					}
+					_, _ = s.db.ExecContext(ctx, "INSERT OR REPLACE INTO system_metadata (key, value, updated_at) VALUES ('installed_commit', ?, ?)", shortSha, now)
+				}
+			}
+		}
+	}
 
 	// 1. Record immutable audit event in SQLite
 	auditID := "aud_" + uuid.NewString()[:8]

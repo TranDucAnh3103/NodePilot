@@ -29,6 +29,14 @@ type AuthRepo interface {
 	RevokeSession(ctx context.Context, sessionID string) error
 	RevokeAllUserSessions(ctx context.Context, userID string) error
 	RotateSession(ctx context.Context, oldSessionID string, newSession *domain.Session) error
+	ListUsers(ctx context.Context) ([]*domain.User, error)
+	UpdateUserRole(ctx context.Context, id string, role domain.Role) error
+	DeleteUser(ctx context.Context, id string) error
+	ListEmailAllowlist(ctx context.Context) ([]string, error)
+	AddEmailAllowlist(ctx context.Context, email string) error
+	RemoveEmailAllowlist(ctx context.Context, email string) error
+	GetSMTPConfig(ctx context.Context) (*domain.SMTPConfig, error)
+	UpdateSMTPConfig(ctx context.Context, cfg *domain.SMTPConfig) error
 }
 
 func NewAuthService(repo AuthRepo, jwtManager *security.JWTManager) *AuthService {
@@ -36,6 +44,10 @@ func NewAuthService(repo AuthRepo, jwtManager *security.JWTManager) *AuthService
 		repo:       repo,
 		jwtManager: jwtManager,
 	}
+}
+
+func (s *AuthService) Repo() AuthRepo {
+	return s.repo
 }
 
 // Bootstrap initializes the primary administrator via local CLI only.
@@ -96,7 +108,57 @@ func (s *AuthService) EnsureDefaultAdmin(ctx context.Context, username, password
 	return s.repo.CreateUser(ctx, newUser)
 }
 
-// ResetPassword allows administrators via local CLI to reset a user's password.
+// ListUsers returns all registered users in the database.
+func (s *AuthService) ListUsers(ctx context.Context) ([]*domain.User, error) {
+	return s.repo.ListUsers(ctx)
+}
+
+// CreateUserWithRole registers a new user with an explicit role.
+func (s *AuthService) CreateUserWithRole(ctx context.Context, username, password string, role domain.Role) (*domain.User, error) {
+	if len(password) < 6 {
+		return nil, domain.ErrWeakPassword
+	}
+	if role != domain.RoleAdmin && role != domain.RoleOperator && role != domain.RoleViewer {
+		role = domain.RoleViewer
+	}
+
+	existing, _ := s.repo.GetUserByUsername(ctx, username)
+	if existing != nil {
+		return nil, fmt.Errorf("tài khoản '%s' đã tồn tại", username)
+	}
+
+	hash, err := security.HashPassword(password, security.DefaultArgon2Params)
+	if err != nil {
+		return nil, fmt.Errorf("lỗi băm mật khẩu: %w", err)
+	}
+
+	user := &domain.User{
+		ID:           uuid.NewString(),
+		Username:     username,
+		PasswordHash: hash,
+		Role:         role,
+		Enabled:      true,
+		CreatedAt:    time.Now().UTC(),
+	}
+
+	if err := s.repo.CreateUser(ctx, user); err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+// UpdateUserRole updates an existing user's role.
+func (s *AuthService) UpdateUserRole(ctx context.Context, id string, role domain.Role) error {
+	return s.repo.UpdateUserRole(ctx, id, role)
+}
+
+// DeleteUser removes a user and their sessions.
+func (s *AuthService) DeleteUser(ctx context.Context, id string) error {
+	_ = s.repo.RevokeAllUserSessions(ctx, id)
+	return s.repo.DeleteUser(ctx, id)
+}
+
+// ResetPassword allows administrators to reset a user's password.
 func (s *AuthService) ResetPassword(ctx context.Context, username, newPassword string) error {
 	if len(newPassword) < 6 {
 		return domain.ErrWeakPassword

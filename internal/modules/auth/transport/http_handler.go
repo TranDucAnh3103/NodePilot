@@ -72,6 +72,22 @@ func (h *AuthHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.H
 	authGroup.Post("/otp/verify", h.VerifyOTP)
 
 	router.Get("/me", authMiddleware, h.Me)
+
+	// User & Account Management (Admin only)
+	authGroup.Get("/accounts", authMiddleware, h.ListAccounts)
+	authGroup.Post("/accounts", authMiddleware, h.CreateAccount)
+	authGroup.Put("/accounts/:id/role", authMiddleware, h.UpdateAccountRole)
+	authGroup.Delete("/accounts/:id", authMiddleware, h.DeleteAccount)
+
+	// Gmail Allowlist (Admin only)
+	authGroup.Get("/otp/allowlist", authMiddleware, h.ListEmailAllowlist)
+	authGroup.Post("/otp/allowlist", authMiddleware, h.AddEmailAllowlist)
+	authGroup.Delete("/otp/allowlist/:email", authMiddleware, h.RemoveEmailAllowlist)
+
+	// SMTP Configuration & Test (Admin only)
+	authGroup.Get("/smtp/config", authMiddleware, h.GetSMTPConfig)
+	authGroup.Put("/smtp/config", authMiddleware, h.UpdateSMTPConfig)
+	authGroup.Post("/smtp/test", authMiddleware, h.TestSMTP)
 }
 
 func (h *AuthHandler) Login(c fiber.Ctx) error {
@@ -212,7 +228,7 @@ func (h *AuthHandler) SendOTP(c fiber.Ctx) error {
 	}
 
 	email := strings.ToLower(strings.TrimSpace(req.Email))
-	if !h.otpSvc.IsEmailAllowed(email) {
+	if !h.otpSvc.IsEmailAllowed(c.Context(), email) {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"data":  nil,
 			"error": fiber.Map{"code": "EMAIL_NOT_ALLOWED", "message": "Email này không nằm trong danh sách được phép truy cập hệ thống."},
@@ -312,6 +328,286 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 			"role":      user.Role,
 			"createdAt": user.CreatedAt,
 		},
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+func (h *AuthHandler) requireAdmin(c fiber.Ctx) error {
+	role, _ := c.Locals("role").(string)
+	if role != string(domain.RoleAdmin) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "FORBIDDEN", "message": "Chỉ quản trị viên (ADMIN) mới có quyền thực hiện thao tác này"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	return nil
+}
+
+func (h *AuthHandler) ListAccounts(c fiber.Ctx) error {
+	users, err := h.authSvc.ListUsers(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INTERNAL_ERROR", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  users,
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+type CreateAccountRequest struct {
+	Username string      `json:"username"`
+	Password string      `json:"password"`
+	Role     domain.Role `json:"role"`
+}
+
+func (h *AuthHandler) CreateAccount(c fiber.Ctx) error {
+	if err := h.requireAdmin(c); err != nil {
+		return err
+	}
+	var req CreateAccountRequest
+	if err := c.Bind().JSON(&req); err != nil || strings.TrimSpace(req.Username) == "" || strings.TrimSpace(req.Password) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "Tên đăng nhập và mật khẩu không được để trống"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	user, err := h.authSvc.CreateUserWithRole(c.Context(), strings.TrimSpace(req.Username), req.Password, req.Role)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "CREATE_USER_FAILED", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"data":  user,
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+type UpdateRoleRequest struct {
+	Role domain.Role `json:"role"`
+}
+
+func (h *AuthHandler) UpdateAccountRole(c fiber.Ctx) error {
+	if err := h.requireAdmin(c); err != nil {
+		return err
+	}
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "ID người dùng là bắt buộc"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	var req UpdateRoleRequest
+	if err := c.Bind().JSON(&req); err != nil || req.Role == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "Role là bắt buộc"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	if err := h.authSvc.UpdateUserRole(c.Context(), id, req.Role); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "UPDATE_FAILED", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  fiber.Map{"success": true},
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+func (h *AuthHandler) DeleteAccount(c fiber.Ctx) error {
+	if err := h.requireAdmin(c); err != nil {
+		return err
+	}
+	id := c.Params("id")
+	currUserID, _ := c.Locals("userId").(string)
+	if id == currUserID {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "CANNOT_DELETE_SELF", "message": "Không thể xóa chính tài khoản bạn đang đăng nhập"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	if err := h.authSvc.DeleteUser(c.Context(), id); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "DELETE_FAILED", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  fiber.Map{"success": true},
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+func (h *AuthHandler) ListEmailAllowlist(c fiber.Ctx) error {
+	list, err := h.authSvc.Repo().ListEmailAllowlist(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INTERNAL_ERROR", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  list,
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+func (h *AuthHandler) AddEmailAllowlist(c fiber.Ctx) error {
+	if err := h.requireAdmin(c); err != nil {
+		return err
+	}
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := c.Bind().JSON(&req); err != nil || strings.TrimSpace(req.Email) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "Email không được để trống"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	cleanEmail := strings.ToLower(strings.TrimSpace(req.Email))
+	if err := h.authSvc.Repo().AddEmailAllowlist(c.Context(), cleanEmail); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "ADD_FAILED", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  fiber.Map{"email": cleanEmail, "success": true},
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+func (h *AuthHandler) RemoveEmailAllowlist(c fiber.Ctx) error {
+	if err := h.requireAdmin(c); err != nil {
+		return err
+	}
+	email := c.Params("email")
+	if email == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "Email parameter is required"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	if err := h.authSvc.Repo().RemoveEmailAllowlist(c.Context(), email); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "REMOVE_FAILED", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  fiber.Map{"email": email, "success": true},
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+func (h *AuthHandler) GetSMTPConfig(c fiber.Ctx) error {
+	cfg, err := h.authSvc.Repo().GetSMTPConfig(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INTERNAL_ERROR", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data": fiber.Map{
+			"host":     cfg.Host,
+			"port":     cfg.Port,
+			"username": cfg.Username,
+			"password": "••••••••••••••••",
+			"fromName": cfg.FromName,
+			"appName":  cfg.AppName,
+			"hasPass":  cfg.Password != "",
+		},
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+func (h *AuthHandler) UpdateSMTPConfig(c fiber.Ctx) error {
+	if err := h.requireAdmin(c); err != nil {
+		return err
+	}
+	var req domain.SMTPConfig
+	if err := c.Bind().JSON(&req); err != nil || req.Host == "" || req.Username == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "Host và Username là bắt buộc"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	if req.Port <= 0 {
+		req.Port = 587
+	}
+	if req.Password == "" || strings.Contains(req.Password, "•••") {
+		current, _ := h.authSvc.Repo().GetSMTPConfig(c.Context())
+		if current != nil {
+			req.Password = current.Password
+		}
+	}
+	if err := h.authSvc.Repo().UpdateSMTPConfig(c.Context(), &req); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "UPDATE_FAILED", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  fiber.Map{"success": true},
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+func (h *AuthHandler) TestSMTP(c fiber.Ctx) error {
+	if err := h.requireAdmin(c); err != nil {
+		return err
+	}
+	var req struct {
+		TargetEmail string `json:"targetEmail"`
+	}
+	_ = c.Bind().JSON(&req)
+	target := strings.TrimSpace(req.TargetEmail)
+
+	if err := h.otpSvc.TestSMTPConnection(c.Context(), target); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "SMTP_TEST_FAILED", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  fiber.Map{"success": true, "message": "Kết nối và gửi email kiểm tra thành công!"},
 		"meta":  fiber.Map{"requestId": getReqID(c)},
 		"error": nil,
 	})
