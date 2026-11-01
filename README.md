@@ -142,7 +142,13 @@ NodePilot-homeserver/
 
 ## 6. Hướng dẫn Khởi chạy Nhanh
 
-### Cách 1: Triển khai Docker (Tiết kiệm CPU/RAM máy chủ qua CI/CD)
+### Cách 1: Khởi chạy 1-Click trên máy Dev (Thư mục `start/`)
+Dự án cung cấp bộ công cụ tự động hóa khởi chạy trên máy phát triển cá nhân:
+- **Nhấp đúp chuột vào file `start/start.bat`** để mở menu tương tác (Single Binary, Dev Hot-Reload, Docker Compose hoặc chạy Unit Tests).
+- Tài khoản quản trị mẫu được tự động tạo sẵn: `admin` / `adminpassword123`.
+- Xem chi tiết tại [start/README.md](file:///f:/Build/NodePilot-homeserver/start/README.md).
+
+### Cách 2: Triển khai Docker (Tiết kiệm CPU/RAM máy chủ qua CI/CD)
 GitHub Actions tự động biên dịch và đẩy image nhẹ sẵn có lên GitHub Container Registry (GHCR). Trên máy chủ, bạn chỉ cần kéo về chạy mà **không tốn 1% CPU biên dịch**:
 
 ```bash

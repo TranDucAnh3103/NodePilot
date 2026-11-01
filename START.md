@@ -14,7 +14,21 @@ Tài liệu này cung cấp hướng dẫn từng bước chi tiết để biên
 
 ---
 
-## 2. Khởi chạy Nhanh qua Docker (Khuyên Dùng cho Máy Chủ Acer Aspire 5733Z)
+## 2. Dành cho Máy Phát triển (Dev): Khởi chạy 1-Click với Thư mục `start/`
+
+Nếu bạn đang thử nghiệm trên máy tính cá nhân (Windows Dev), dự án đã cung cấp sẵn thư mục `start/` với các kịch bản tự động hóa 1-click:
+
+- **Nhấp đúp chuột file `start/start.bat`** để mở Menu tương tác:
+  - Chọn **[1]**: Tự động build, tạo admin mẫu (`admin` / `adminpassword123`) và tự mở trình duyệt tại `http://127.0.0.1:17880`.
+  - Chọn **[2]**: Chế độ lập trình Hot-Reload (Backend Go + Frontend Vite tại `http://localhost:5173`).
+  - Chọn **[3]**: Khởi chạy thử nghiệm cụm Docker Compose cục bộ.
+  - Chọn **[4]**: Chạy toàn bộ kiểm thử Unit Tests tự động.
+
+> Chi tiết xem thêm tại [start/README.md](file:///f:/Build/NodePilot-homeserver/start/README.md).
+
+---
+
+## 3. Khởi chạy Nhanh qua Docker (Khuyên Dùng cho Máy Chủ Acer Aspire 5733Z)
 
 > [!TIP]
 > **Giải pháp Tiết kiệm 100% Tài nguyên Máy chủ**: Hệ thống CI/CD của GitHub Actions đã tự động biên dịch toàn bộ Frontend và Backend trên đám mây. Máy chủ **hoàn toàn không cần chạy lệnh `build`**, không tốn CPU hay RAM để biên dịch.
@@ -52,7 +66,7 @@ Sau khi cài đặt lần đầu, bạn **hoàn toàn không cần gõ lệnh te
 
 ---
 
-## 3. Khởi chạy Thủ công (Chế độ Single Binary Sản xuất)
+## 4. Khởi chạy Thủ công (Chế độ Single Binary Sản xuất)
 
 Toàn bộ giao diện Web SPA được nhúng trực tiếp vào file nhị phân Go. Bạn chỉ cần thực hiện 4 bước sau:
 
@@ -121,7 +135,7 @@ http://127.0.0.1:17880
 
 ---
 
-## 3. Khởi chạy ở Chế độ Phát triển (Dev Mode với Hot-Reload)
+## 5. Khởi chạy ở Chế độ Phát triển Nâng cao (Dev Mode với Hot-Reload)
 
 Khi lập trình và cần chỉnh sửa giao diện nhanh chóng với tính năng HMR (Hot Module Replacement):
 
@@ -159,7 +173,7 @@ cd ..
 
 ---
 
-## 5. Biến Môi trường Cấu hình (Environment Variables)
+## 6. Biến Môi trường Cấu hình (Environment Variables)
 
 Hệ thống có thể tùy biến qua các biến môi trường (hoặc file `.env`):
 
@@ -173,7 +187,7 @@ Hệ thống có thể tùy biến qua các biến môi trường (hoặc file `
 
 ---
 
-## 6. Hướng dẫn Triển khai trên Ubuntu Server 24.04 (Acer Aspire 5733Z)
+## 7. Hướng dẫn Triển khai trên Ubuntu Server 24.04 (Acer Aspire 5733Z)
 
 ### 1. Biên dịch chéo (Cross-compile) từ máy Dev sang Linux:
 ```bash
