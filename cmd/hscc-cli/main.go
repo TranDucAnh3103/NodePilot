@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"golang.org/x/term"
+	"hscc"
 	"hscc/internal/modules/auth/app"
 	"hscc/internal/modules/auth/domain"
 	"hscc/internal/modules/auth/infra"
@@ -34,10 +35,18 @@ func main() {
 	defer db.Close()
 
 	ctx := context.Background()
-	// Ensure migrations are up to date
-	if err := db.Migrate(ctx, "./db/migrations"); err != nil {
-		fmt.Fprintf(os.Stderr, "Error applying migrations: %v\n", err)
-		os.Exit(1)
+	// Ensure migrations are up to date (embedded filesystem with fallback to disk)
+	migrationsFS, err := hscc.GetMigrationsFS()
+	if err == nil {
+		if err := db.MigrateFS(ctx, migrationsFS); err != nil {
+			fmt.Fprintf(os.Stderr, "Error applying embedded migrations: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		if err := db.Migrate(ctx, "./db/migrations"); err != nil {
+			fmt.Fprintf(os.Stderr, "Error applying disk migrations: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	repo := infra.NewAuthRepository(db)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -63,8 +64,8 @@ func Open(dbPath string) (*DB, error) {
 	return &DB{DB: rawDB}, nil
 }
 
-// Migrate runs migration SQL files in lexicographical order.
-func (db *DB) Migrate(ctx context.Context, migrationsDir string) error {
+// MigrateFS runs migration SQL files from an fs.FS filesystem in lexicographical order.
+func (db *DB) MigrateFS(ctx context.Context, fsys fs.FS) error {
 	// Create schema_migrations table if not exists
 	_, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -76,9 +77,9 @@ func (db *DB) Migrate(ctx context.Context, migrationsDir string) error {
 		return fmt.Errorf("failed to initialize schema_migrations: %w", err)
 	}
 
-	entries, err := os.ReadDir(migrationsDir)
+	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
-		return fmt.Errorf("failed to read migrations directory %s: %w", migrationsDir, err)
+		return fmt.Errorf("failed to read migrations filesystem: %w", err)
 	}
 
 	var sqlFiles []string
@@ -99,10 +100,9 @@ func (db *DB) Migrate(ctx context.Context, migrationsDir string) error {
 			continue // Already applied
 		}
 
-		fullPath := filepath.Join(migrationsDir, file)
-		content, err := os.ReadFile(fullPath)
+		content, err := fs.ReadFile(fsys, file)
 		if err != nil {
-			return fmt.Errorf("failed to read migration file %s: %w", fullPath, err)
+			return fmt.Errorf("failed to read migration file %s: %w", file, err)
 		}
 
 		tx, err := db.BeginTx(ctx, nil)
@@ -127,4 +127,9 @@ func (db *DB) Migrate(ctx context.Context, migrationsDir string) error {
 	}
 
 	return nil
+}
+
+// Migrate runs migration SQL files from a directory on disk.
+func (db *DB) Migrate(ctx context.Context, migrationsDir string) error {
+	return db.MigrateFS(ctx, os.DirFS(migrationsDir))
 }

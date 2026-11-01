@@ -39,10 +39,18 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Run migrations
-	if err := db.Migrate(ctx, "./db/migrations"); err != nil {
-		slog.Error("failed to execute migrations", slog.String("error", err.Error()))
-		os.Exit(1)
+	// Run migrations (using embedded filesystem with fallback to disk)
+	migrationsFS, err := hscc.GetMigrationsFS()
+	if err == nil {
+		if err := db.MigrateFS(ctx, migrationsFS); err != nil {
+			slog.Error("failed to execute embedded migrations", slog.String("error", err.Error()))
+			os.Exit(1)
+		}
+	} else {
+		if err := db.Migrate(ctx, "./db/migrations"); err != nil {
+			slog.Error("failed to execute disk migrations", slog.String("error", err.Error()))
+			os.Exit(1)
+		}
 	}
 
 	// 4. Initialize Auth Module
