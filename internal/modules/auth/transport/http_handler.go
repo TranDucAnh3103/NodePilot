@@ -28,6 +28,10 @@ type LoginRequest struct {
 func (h *AuthHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler) {
 	authGroup := router.Group("/auth")
 	authGroup.Post("/login", h.Login)
+	authGroup.Get("/login", func(c fiber.Ctx) error {
+		// Friendly redirect: if user navigates to /api/v1/auth/login in browser, redirect to Web UI root
+		return c.Redirect().To("/")
+	})
 	authGroup.Post("/refresh", h.Refresh)
 	authGroup.Post("/logout", h.Logout)
 
