@@ -1,0 +1,33 @@
+#!/bin/sh
+
+# NodePilot HSCC - Pre-push Hook
+# Safeguard to prevent direct pushes to protected branches (master / main)
+
+protected_branches="^(master|main)$"
+
+while read local_ref local_sha remote_ref remote_sha
+do
+    remote_branch=$(echo "$remote_ref" | sed 's@refs/heads/@@')
+    if echo "$remote_branch" | grep -Eq "$protected_branches"; then
+        if [ "$ALLOW_PROTECTED_PUSH" != "1" ]; then
+            echo ""
+            echo "============================================================"
+            echo " [PROTECTED BRANCH SAFEGUARD ACTIVATED]"
+            echo "============================================================"
+            echo " Push rejected: Direct push to '$remote_branch' is blocked."
+            echo ""
+            echo " Recommended Workflow:"
+            echo "   1. Create a feature branch: git checkout -b feat/your-feature"
+            echo "   2. Push your feature branch: git push origin feat/your-feature"
+            echo "   3. Open a Pull Request on GitHub to review and merge."
+            echo ""
+            echo " To bypass this guard in an intentional emergency, run:"
+            echo "   ALLOW_PROTECTED_PUSH=1 git push"
+            echo "============================================================"
+            echo ""
+            exit 1
+        fi
+    fi
+done
+
+exit 0
