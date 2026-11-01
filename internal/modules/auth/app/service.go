@@ -40,7 +40,7 @@ func NewAuthService(repo AuthRepo, jwtManager *security.JWTManager) *AuthService
 
 // Bootstrap initializes the primary administrator via local CLI only.
 func (s *AuthService) Bootstrap(ctx context.Context, username, password string) (*domain.User, error) {
-	if len(password) < 8 {
+	if len(password) < 6 {
 		return nil, domain.ErrWeakPassword
 	}
 
@@ -73,9 +73,32 @@ func (s *AuthService) Bootstrap(ctx context.Context, username, password string) 
 	return user, nil
 }
 
+// EnsureDefaultAdmin guarantees that a given admin user exists with the desired password.
+func (s *AuthService) EnsureDefaultAdmin(ctx context.Context, username, password string) error {
+	hash, err := security.HashPassword(password, security.DefaultArgon2Params)
+	if err != nil {
+		return err
+	}
+
+	u, err := s.repo.GetUserByUsername(ctx, username)
+	if err == nil && u != nil {
+		return s.repo.UpdatePassword(ctx, username, hash)
+	}
+
+	newUser := &domain.User{
+		ID:           uuid.NewString(),
+		Username:     username,
+		PasswordHash: hash,
+		Role:         domain.RoleAdmin,
+		Enabled:      true,
+		CreatedAt:    time.Now().UTC(),
+	}
+	return s.repo.CreateUser(ctx, newUser)
+}
+
 // ResetPassword allows administrators via local CLI to reset a user's password.
 func (s *AuthService) ResetPassword(ctx context.Context, username, newPassword string) error {
-	if len(newPassword) < 8 {
+	if len(newPassword) < 6 {
 		return domain.ErrWeakPassword
 	}
 
@@ -186,6 +209,25 @@ func (s *AuthService) Logout(ctx context.Context, rawRefreshToken string) error 
 // GetMe retrieves current user information.
 func (s *AuthService) GetMe(ctx context.Context, userID string) (*domain.User, error) {
 	return s.repo.GetUserByID(ctx, userID)
+}
+
+// IssueTokensForUser issues access token and persistent refresh session for a user.
+func (s *AuthService) IssueTokensForUser(ctx context.Context, user *domain.User) (string, string, error) {
+	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.Username, user.Role)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate access token: %w", err)
+	}
+
+	refreshToken, session, err := s.createSession(user.ID)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create refresh session: %w", err)
+	}
+
+	if err := s.repo.CreateSession(ctx, session); err != nil {
+		return "", "", fmt.Errorf("failed to save refresh session: %w", err)
+	}
+
+	return accessToken, refreshToken, nil
 }
 
 func (s *AuthService) createSession(userID string) (string, *domain.Session, error) {

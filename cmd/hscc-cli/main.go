@@ -61,7 +61,7 @@ func main() {
 		_ = bootstrapCmd.Parse(os.Args[2:])
 
 		if *password == "" {
-			fmt.Printf("Enter password for admin user '%s' (min 8 chars): ", *username)
+			fmt.Printf("Enter password for admin user '%s' (min 6 chars): ", *username)
 			bytePassword, err := term.ReadPassword(int(syscall.Stdin))
 			fmt.Println()
 			if err != nil {
@@ -90,11 +90,11 @@ func main() {
 	case "reset-password":
 		resetCmd := flag.NewFlagSet("reset-password", flag.ExitOnError)
 		username := resetCmd.String("username", "admin", "Target username")
-		password := resetCmd.String("password", "", "New password (min 8 chars)")
+		password := resetCmd.String("password", "", "New password (min 6 chars)")
 		_ = resetCmd.Parse(os.Args[2:])
 
 		if *password == "" {
-			fmt.Printf("Enter new password for '%s' (min 8 chars): ", *username)
+			fmt.Printf("Enter new password for '%s' (min 6 chars): ", *username)
 			bytePassword, err := term.ReadPassword(int(syscall.Stdin))
 			fmt.Println()
 			if err != nil {

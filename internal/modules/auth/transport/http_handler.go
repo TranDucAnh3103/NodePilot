@@ -16,11 +16,16 @@ const RefreshCookieName = "hscc_refresh_token"
 
 type AuthHandler struct {
 	authSvc *app.AuthService
+	otpSvc  *app.OTPService
 	cfg     *config.Config
 }
 
 func NewAuthHandler(authSvc *app.AuthService, cfg *config.Config) *AuthHandler {
-	return &AuthHandler{authSvc: authSvc, cfg: cfg}
+	return &AuthHandler{
+		authSvc: authSvc,
+		otpSvc:  app.NewOTPService(authSvc),
+		cfg:     cfg,
+	}
 }
 
 func (h *AuthHandler) getCookieSettings(c fiber.Ctx) (bool, string) {
@@ -45,6 +50,15 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+type SendOTPRequest struct {
+	Email string `json:"email"`
+}
+
+type VerifyOTPRequest struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
 func (h *AuthHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler) {
 	authGroup := router.Group("/auth")
 	authGroup.Post("/login", h.Login)
@@ -54,6 +68,8 @@ func (h *AuthHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.H
 	})
 	authGroup.Post("/refresh", h.Refresh)
 	authGroup.Post("/logout", h.Logout)
+	authGroup.Post("/otp/send", h.SendOTP)
+	authGroup.Post("/otp/verify", h.VerifyOTP)
 
 	router.Get("/me", authMiddleware, h.Me)
 }
@@ -180,6 +196,91 @@ func (h *AuthHandler) Logout(c fiber.Ctx) error {
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"data":  fiber.Map{"success": true},
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+func (h *AuthHandler) SendOTP(c fiber.Ctx) error {
+	var req SendOTPRequest
+	if err := c.Bind().JSON(&req); err != nil || strings.TrimSpace(req.Email) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "Email is required"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if !h.otpSvc.IsEmailAllowed(email) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "EMAIL_NOT_ALLOWED", "message": "Email này không nằm trong danh sách được phép truy cập hệ thống."},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	code, err := h.otpSvc.GenerateAndSendOTP(c.Context(), email)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "OTP_SEND_FAILED", "message": "Không thể tạo mã xác thực: " + err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data": fiber.Map{
+			"sent":    true,
+			"message": "Mã xác thực (OTP) đã được gửi đến " + email,
+			// Debug helper preview for dev
+			"code": code,
+		},
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+func (h *AuthHandler) VerifyOTP(c fiber.Ctx) error {
+	var req VerifyOTPRequest
+	if err := c.Bind().JSON(&req); err != nil || strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Code) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "Email và mã OTP là bắt buộc"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	accessToken, refreshToken, user, err := h.otpSvc.VerifyOTP(c.Context(), req.Email, req.Code)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_OTP", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	secure, sameSite := h.getCookieSettings(c)
+	cookie := fiber.Cookie{
+		Name:     RefreshCookieName,
+		Value:    refreshToken,
+		Expires:  time.Now().Add(7 * 24 * time.Hour),
+		HTTPOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+		Path:     "/api/v1/auth",
+	}
+	c.Cookie(&cookie)
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data": fiber.Map{
+			"accessToken": accessToken,
+			"user": fiber.Map{
+				"id":       user.ID,
+				"username": user.Username,
+				"role":     user.Role,
+			},
+		},
 		"meta":  fiber.Map{"requestId": getReqID(c)},
 		"error": nil,
 	})

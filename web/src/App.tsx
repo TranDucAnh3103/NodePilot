@@ -99,15 +99,16 @@ export function App() {
       })
 
       // Update CPU history (max 60 points)
-      const cpuVal = snap.cpu.usagePercent !== null ? snap.cpu.usagePercent : 0
+      const cpuVal = (snap.cpu && snap.cpu.usagePercent !== null) ? snap.cpu.usagePercent : 0
       setCpuHistory((prev) => {
         const next = [...prev, { time: timeLabel, value: cpuVal }]
         return next.length > 60 ? next.slice(next.length - 60) : next
       })
 
       // Update Network history (sum of all rx/tx in KB/s)
-      const totalRxBytes = snap.networks.reduce((acc, n) => acc + n.rxBytesPerSec, 0)
-      const totalTxBytes = snap.networks.reduce((acc, n) => acc + n.txBytesPerSec, 0)
+      const networks = snap.networks || []
+      const totalRxBytes = networks.reduce((acc, n) => acc + (n.rxBytesPerSec || 0), 0)
+      const totalTxBytes = networks.reduce((acc, n) => acc + (n.txBytesPerSec || 0), 0)
 
       setNetHistory((prev) => {
         const next = [
@@ -179,7 +180,7 @@ export function App() {
       />
 
       {/* Active System Alerts Banner */}
-      {activeAlerts.length > 0 && (
+      {(activeAlerts || []).length > 0 && activeAlerts[0] && (
         <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 flex items-center justify-between text-xs text-amber-300">
           <div className="flex items-center space-x-2.5 overflow-x-auto">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-400" />

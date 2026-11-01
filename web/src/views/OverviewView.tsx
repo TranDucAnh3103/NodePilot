@@ -40,7 +40,12 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     )
   }
 
-  const { host, cpu, memory, disks, networks, temperature } = snapshot
+  const host = snapshot.host || { hostname: 'homeserver', platform: '', uptimeSeconds: 0 }
+  const cpu = snapshot.cpu || { usagePercent: 0, cores: 1, modelName: '' }
+  const memory = snapshot.memory || { totalBytes: 0, usedBytes: 0, freeBytes: 0, swapTotalBytes: 0, swapUsedBytes: 0 }
+  const disks = snapshot.disks || []
+  const networks = snapshot.networks || []
+  const temperature = snapshot.temperature || []
 
   // Format bytes to GiB / MiB
   const formatBytes = (bytes: number): string => {
@@ -197,13 +202,13 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               <span className="text-xs font-semibold uppercase tracking-wider">Ổ cứng chính (/)</span>
               <HardDrive className="w-4 h-4 text-amber-400" />
             </div>
-            {disks.length > 0 ? (
+            {disks && disks.length > 0 ? (
               <>
                 <div className="text-2xl font-bold font-mono text-slate-100">
-                  {disks[0].usedPercent.toFixed(1)}%
+                  {(disks[0].usedPercent || 0).toFixed(1)}%
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1 font-mono">
-                  {formatBytes(disks[0].usedBytes)} / {formatBytes(disks[0].totalBytes)}
+                  {formatBytes(disks[0].usedBytes || 0)} / {formatBytes(disks[0].totalBytes || 0)}
                 </p>
               </>
             ) : (
@@ -214,14 +219,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
               <motion.div
                 initial={{ width: 0 }}
-                animate={{ width: `${disks.length > 0 ? disks[0].usedPercent : 0}%` }}
+                animate={{ width: `${disks && disks.length > 0 ? (disks[0].usedPercent || 0) : 0}%` }}
                 transition={spring.progress}
                 className="h-full bg-amber-500"
               />
             </div>
             <div className="flex justify-between text-[10px] text-slate-500 mt-1.5 font-mono">
-              <span>Trống: {disks.length > 0 ? formatBytes(disks[0].freeBytes) : '0 B'}</span>
-              <span>{disks.length} Phân vùng</span>
+              <span>Trống: {disks && disks.length > 0 ? formatBytes(disks[0].freeBytes || 0) : '0 B'}</span>
+              <span>{disks ? disks.length : 0} Phân vùng</span>
             </div>
           </div>
         </div>
@@ -239,7 +244,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                   <ArrowDown className="w-3 h-3 text-teal-400" /> Nhận (RX)
                 </span>
                 <span className="text-base font-bold font-mono text-slate-200">
-                  {formatBytes(networks.reduce((acc, n) => acc + n.rxBytesPerSec, 0))}/s
+                  {formatBytes((networks || []).reduce((acc, n) => acc + (n.rxBytesPerSec || 0), 0))}/s
                 </span>
               </div>
               <div>
@@ -247,14 +252,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                   <ArrowUp className="w-3 h-3 text-indigo-400" /> Gửi (TX)
                 </span>
                 <span className="text-base font-bold font-mono text-slate-200">
-                  {formatBytes(networks.reduce((acc, n) => acc + n.txBytesPerSec, 0))}/s
+                  {formatBytes((networks || []).reduce((acc, n) => acc + (n.txBytesPerSec || 0), 0))}/s
                 </span>
               </div>
             </div>
           </div>
           <div className="mt-4 pt-2 border-t border-slate-800/60 flex justify-between text-[10px] text-slate-400">
             <span>Giao diện hoạt động</span>
-            <span className="font-mono text-slate-300">{networks.filter((n) => n.isUp).length} interfaces</span>
+            <span className="font-mono text-slate-300">{(networks || []).filter((n) => n.isUp).length} interfaces</span>
           </div>
         </div>
       </div>
