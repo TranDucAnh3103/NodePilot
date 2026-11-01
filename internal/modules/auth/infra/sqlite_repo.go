@@ -72,6 +72,22 @@ func (r *AuthRepository) GetUserByUsername(ctx context.Context, username string)
 	return &u, nil
 }
 
+func (r *AuthRepository) UpdatePassword(ctx context.Context, username, newHash string) error {
+	query := `UPDATE users SET password_hash = ? WHERE username = ?`
+	res, err := r.db.ExecContext(ctx, query, newHash, username)
+	if err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
 func (r *AuthRepository) GetUserByID(ctx context.Context, id string) (*domain.User, error) {
 	query := `SELECT id, username, password_hash, role, enabled, created_at FROM users WHERE id = ?`
 	row := r.db.QueryRowContext(ctx, query, id)

@@ -51,10 +51,13 @@ if ($Rebuild -or (-not (Test-Path $apiBin)) -or (-not (Test-Path $cliBin))) {
     Write-Host "[OK] Compiled: bin\hscc-cli.exe and bin\hscc-api.exe" -ForegroundColor Green
 }
 
-# 4. Bootstrap default admin user
+# 4. Bootstrap or verify default admin user
 Write-Host "[...] Verifying admin account..." -ForegroundColor Yellow
-$null = & "$RootDir\bin\hscc-cli.exe" bootstrap --username admin --password adminpassword123 2>&1
-Write-Host "[OK] Admin account ready." -ForegroundColor Green
+$null = & "$RootDir\bin\hscc-cli.exe" reset-password --username admin --password adminpassword123 2>&1
+if ($LASTEXITCODE -ne 0) {
+    $null = & "$RootDir\bin\hscc-cli.exe" bootstrap --username admin --password adminpassword123 2>&1
+}
+Write-Host "[OK] Admin account verified (admin / adminpassword123)" -ForegroundColor Green
 
 # 5. Stop any existing hscc-api instance
 Get-Process -Name "hscc-api" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

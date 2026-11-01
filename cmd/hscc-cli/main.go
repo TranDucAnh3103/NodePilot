@@ -87,6 +87,32 @@ func main() {
 		fmt.Printf("✓ Administrator '%s' successfully bootstrapped (ID: %s)!\n", user.Username, user.ID)
 		fmt.Println("✓ Bootstrap is now locked. You can start the server via hscc-api.")
 
+	case "reset-password":
+		resetCmd := flag.NewFlagSet("reset-password", flag.ExitOnError)
+		username := resetCmd.String("username", "admin", "Target username")
+		password := resetCmd.String("password", "", "New password (min 8 chars)")
+		_ = resetCmd.Parse(os.Args[2:])
+
+		if *password == "" {
+			fmt.Printf("Enter new password for '%s' (min 8 chars): ", *username)
+			bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+			fmt.Println()
+			if err != nil {
+				reader := bufio.NewReader(os.Stdin)
+				line, _ := reader.ReadString('\n')
+				*password = strings.TrimSpace(line)
+			} else {
+				*password = strings.TrimSpace(string(bytePassword))
+			}
+		}
+
+		if err := authSvc.ResetPassword(ctx, *username, *password); err != nil {
+			fmt.Fprintf(os.Stderr, "Error resetting password: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("✓ Password for user '%s' updated successfully.\n", *username)
+
 	default:
 		printUsage()
 		os.Exit(1)
@@ -96,5 +122,6 @@ func main() {
 func printUsage() {
 	fmt.Println("Home Server Control Center (HSCC) CLI")
 	fmt.Println("Usage:")
-	fmt.Println("  hscc-cli bootstrap [--username <name>] [--password <pass>]   Initialize the primary admin user")
+	fmt.Println("  hscc-cli bootstrap [--username <name>] [--password <pass>]       Initialize the primary admin user")
+	fmt.Println("  hscc-cli reset-password [--username <name>] [--password <pass>]   Reset password for an existing user")
 }

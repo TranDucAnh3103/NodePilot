@@ -32,9 +32,12 @@ if ((-not (Test-Path "$RootDir\bin\hscc-cli.exe")) -or (-not (Test-Path "$RootDi
     Write-Host "[OK] Backend binaries compiled." -ForegroundColor Green
 }
 
-# 3. Bootstrap default admin user
+# 3. Bootstrap or verify default admin user
 Write-Host "[...] Verifying admin account..." -ForegroundColor Yellow
-$null = & "$RootDir\bin\hscc-cli.exe" bootstrap --username admin --password adminpassword123 2>&1
+$null = & "$RootDir\bin\hscc-cli.exe" reset-password --username admin --password adminpassword123 2>&1
+if ($LASTEXITCODE -ne 0) {
+    $null = & "$RootDir\bin\hscc-cli.exe" bootstrap --username admin --password adminpassword123 2>&1
+}
 Write-Host "[OK] Admin account verified (admin / adminpassword123)" -ForegroundColor Green
 
 # 4. Check web dependencies

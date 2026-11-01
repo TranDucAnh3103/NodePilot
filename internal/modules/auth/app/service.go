@@ -23,6 +23,7 @@ type AuthRepo interface {
 	CreateUser(ctx context.Context, u *domain.User) error
 	GetUserByUsername(ctx context.Context, username string) (*domain.User, error)
 	GetUserByID(ctx context.Context, id string) (*domain.User, error)
+	UpdatePassword(ctx context.Context, username, newHash string) error
 	CreateSession(ctx context.Context, s *domain.Session) error
 	GetSessionByTokenHash(ctx context.Context, hash string) (*domain.Session, error)
 	RevokeSession(ctx context.Context, sessionID string) error
@@ -70,6 +71,32 @@ func (s *AuthService) Bootstrap(ctx context.Context, username, password string) 
 	}
 
 	return user, nil
+}
+
+// ResetPassword allows administrators via local CLI to reset a user's password.
+func (s *AuthService) ResetPassword(ctx context.Context, username, newPassword string) error {
+	if len(newPassword) < 8 {
+		return domain.ErrWeakPassword
+	}
+
+	user, err := s.repo.GetUserByUsername(ctx, username)
+	if err != nil {
+		return domain.ErrUserNotFound
+	}
+
+	hash, err := security.HashPassword(newPassword, security.DefaultArgon2Params)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	if err := s.repo.UpdatePassword(ctx, user.Username, hash); err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+
+	// Revoke all existing sessions to enforce re-login
+	_ = s.repo.RevokeAllUserSessions(ctx, user.ID)
+
+	return nil
 }
 
 // Login authenticates credentials, returns an access JWT and a newly issued refresh token.
