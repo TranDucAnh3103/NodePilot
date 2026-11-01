@@ -51,6 +51,8 @@ type Config struct {
 	Production      bool
 }
 
+var GitCommit = "01fb70c"
+
 func LoadConfig() *Config {
 	host := getEnv("HSCC_HOST", "127.0.0.1")
 	portStr := getEnv("HSCC_PORT", "17880")
@@ -136,7 +138,7 @@ func LoadConfig() *Config {
 		WatchtowerToken:      getEnv("WATCHTOWER_HTTP_TOKEN", "nodepilot-secret-watchtower-token"),
 		GitHubRepo:           getEnv("GITHUB_REPOSITORY", detectGitRepository()),
 		Version:              getEnv("HSCC_VERSION", "v1.0.0"),
-		Commit:               getEnv("HSCC_COMMIT", "ede5c8b"),
+		Commit:               getEnv("HSCC_COMMIT", GitCommit),
 		IdleCollectIntervalS: getInt("HSCC_IDLE_COLLECT_INTERVAL_S", 60, 0),
 		ActiveGraceS:         getInt("HSCC_ACTIVE_GRACE_S", 30, 0),
 		MemoryLimitMiB:       getInt("HSCC_MEMORY_LIMIT_MIB", 100, 0),

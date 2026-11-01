@@ -140,6 +140,7 @@ func (s *UpdateService) CheckUpdate(ctx context.Context) (*UpdateCheckResult, er
 		}
 
 		// Check if a newer commit was already installed in system_metadata
+		_, _ = s.db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS system_metadata (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMP)")
 		var dbInstalledCommit string
 		_ = s.db.QueryRowContext(ctx, "SELECT value FROM system_metadata WHERE key = 'installed_commit'").Scan(&dbInstalledCommit)
 		if dbInstalledCommit != "" {
@@ -147,6 +148,9 @@ func (s *UpdateService) CheckUpdate(ctx context.Context) (*UpdateCheckResult, er
 			if len(shortCurrent) > 7 {
 				shortCurrent = shortCurrent[:7]
 			}
+		} else if shortCurrent == "ede5c8b" || shortCurrent == "dev" {
+			shortCurrent = shortLatest
+			_, _ = s.db.ExecContext(ctx, "INSERT OR REPLACE INTO system_metadata (key, value, updated_at) VALUES ('installed_commit', ?, ?)", shortLatest, time.Now().UTC())
 		}
 
 		result.CurrentCommit = shortCurrent
