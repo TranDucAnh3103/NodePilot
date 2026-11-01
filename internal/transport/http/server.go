@@ -171,7 +171,7 @@ func (s *Server) setupRoutes() {
 	})
 
 	// Register Auth Routes
-	authH := authTransport.NewAuthHandler(s.authSvc)
+	authH := authTransport.NewAuthHandler(s.authSvc, s.cfg)
 	authH.RegisterRoutes(api, authMiddleware)
 
 	// Register System Routes (History, Processes, Alerts, Power-status)

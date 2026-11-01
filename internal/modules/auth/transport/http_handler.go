@@ -2,11 +2,13 @@ package transport
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"hscc/internal/modules/auth/app"
 	"hscc/internal/modules/auth/domain"
+	"hscc/internal/platform/config"
 	"hscc/internal/platform/logging"
 )
 
@@ -14,10 +16,28 @@ const RefreshCookieName = "hscc_refresh_token"
 
 type AuthHandler struct {
 	authSvc *app.AuthService
+	cfg     *config.Config
 }
 
-func NewAuthHandler(authSvc *app.AuthService) *AuthHandler {
-	return &AuthHandler{authSvc: authSvc}
+func NewAuthHandler(authSvc *app.AuthService, cfg *config.Config) *AuthHandler {
+	return &AuthHandler{authSvc: authSvc, cfg: cfg}
+}
+
+func (h *AuthHandler) getCookieSettings(c fiber.Ctx) (bool, string) {
+	secure := false
+	sameSite := "Strict"
+	if h.cfg != nil {
+		secure = h.cfg.CookieSecure
+		sameSite = h.cfg.CookieSameSite
+	}
+
+	origin := c.Get("Origin")
+	if origin != "" && (strings.Contains(origin, "vercel.app") || c.Protocol() == "https") {
+		secure = true
+		sameSite = "None"
+	}
+
+	return secure, sameSite
 }
 
 type LoginRequest struct {
@@ -65,14 +85,15 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 		})
 	}
 
-	// Set HttpOnly, Secure, SameSite=Strict refresh cookie
+	// Set HttpOnly, Secure, SameSite refresh cookie (auto-adapts for Vercel cross-origin)
+	secure, sameSite := h.getCookieSettings(c)
 	cookie := fiber.Cookie{
 		Name:     RefreshCookieName,
 		Value:    refreshToken,
 		Expires:  time.Now().Add(7 * 24 * time.Hour),
 		HTTPOnly: true,
-		Secure:   false, // Set to true behind Tailscale Serve HTTPS
-		SameSite: "Strict",
+		Secure:   secure,
+		SameSite: sameSite,
 		Path:     "/api/v1/auth",
 	}
 	c.Cookie(&cookie)
@@ -122,13 +143,14 @@ func (h *AuthHandler) Refresh(c fiber.Ctx) error {
 	}
 
 	// Set rotated cookie
+	secure, sameSite := h.getCookieSettings(c)
 	cookie := fiber.Cookie{
 		Name:     RefreshCookieName,
 		Value:    newRefreshToken,
 		Expires:  time.Now().Add(7 * 24 * time.Hour),
 		HTTPOnly: true,
-		Secure:   false,
-		SameSite: "Strict",
+		Secure:   secure,
+		SameSite: sameSite,
 		Path:     "/api/v1/auth",
 	}
 	c.Cookie(&cookie)
