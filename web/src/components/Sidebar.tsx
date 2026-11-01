@@ -6,6 +6,8 @@ import {
   Layers,
   Activity,
   FileCode,
+  FolderOpen,
+  ListOrdered,
   ScrollText,
   Settings,
   Server,
@@ -23,7 +25,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange }) => 
     { id: 'system', label: 'Hệ thống', icon: Cpu },
     { id: 'docker', label: 'Docker Workloads', icon: Layers },
     { id: 'services', label: 'Dịch vụ systemd', icon: Activity },
+    { id: 'processes', label: 'Tiến trình host', icon: ListOrdered },
     { id: 'tasks', label: 'Tác vụ định sẵn', icon: FileCode },
+    { id: 'files', label: 'Tệp Sandbox', icon: FolderOpen },
     { id: 'audit', label: 'Nhật ký kiểm toán', icon: ScrollText },
     { id: 'settings', label: 'Cài đặt & Chính sách', icon: Settings },
   ]

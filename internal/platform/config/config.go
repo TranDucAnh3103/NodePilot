@@ -3,8 +3,12 @@ package config
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"net"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -21,11 +25,43 @@ type Config struct {
 	GitHubRepo       string
 	Version          string
 	Commit           string
+
+	// --- Power management / hibernation ---
+	// IdleCollectIntervalS is the sampling interval used when no UI client is
+	// watching live metrics. 0 = full hibernation (collector sleeps until a
+	// client asks for data; history & alerts pause while idle).
+	IdleCollectIntervalS int
+	// ActiveGraceS keeps the collector in active mode for a short time after
+	// the last viewer leaves, so quick tab switches do not thrash.
+	ActiveGraceS int
+	// MemoryLimitMiB is a soft Go runtime memory limit (GOMEMLIMIT) used to
+	// keep RSS inside the hardware budget. 0 = disabled.
+	MemoryLimitMiB int
+
+	// --- Cross-origin UI (e.g. Vercel-hosted frontend) ---
+	CookieSecure   bool
+	CookieSameSite string
+
+	// --- Sprint 3 ---
+	BackupDir       string
+	BackupKeep      int
+	TasksConfigPath string
+	FileRoots       string
+	Production      bool
 }
 
 func LoadConfig() *Config {
 	host := getEnv("HSCC_HOST", "127.0.0.1")
 	portStr := getEnv("HSCC_PORT", "17880")
+
+	// HSCC_ADDR (host:port) takes precedence - used by the Docker image.
+	if addr := os.Getenv("HSCC_ADDR"); addr != "" {
+		if h, p, err := net.SplitHostPort(addr); err == nil {
+			host = h
+			portStr = p
+		}
+	}
+
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
 		port = 17880
@@ -45,33 +81,81 @@ func LoadConfig() *Config {
 		helperSocket = "./data/helper.sock"
 	}
 
-	intervalStr := getEnv("HSCC_COLLECT_INTERVAL_S", "3")
-	interval, err := strconv.Atoi(intervalStr)
-	if err != nil || interval < 1 {
-		interval = 3
+	production := runtime.GOOS == "linux" && dirExists("/etc/hscc")
+
+	origins := []string{"http://127.0.0.1:17880", "http://localhost:17880", "http://localhost:5173", "http://127.0.0.1:5173"}
+	for _, o := range strings.Split(os.Getenv("HSCC_ALLOWED_ORIGINS"), ",") {
+		o = strings.TrimRight(strings.TrimSpace(o), "/")
+		if o != "" {
+			origins = append(origins, o)
+		}
 	}
 
-	maxClientsStr := getEnv("HSCC_MAX_WS_CLIENTS", "3")
-	maxClients, err := strconv.Atoi(maxClientsStr)
-	if err != nil || maxClients < 1 {
-		maxClients = 3
+	dataDir := filepath.Dir(dbPath)
+	backupDir := getEnv("HSCC_BACKUP_DIR", "")
+	if backupDir == "" {
+		if production {
+			backupDir = "/var/lib/hscc/backups"
+		} else {
+			backupDir = filepath.Join(dataDir, "backups")
+		}
+	}
+
+	tasksPath := getEnv("HSCC_TASKS_CONFIG", "")
+	if tasksPath == "" {
+		if production {
+			tasksPath = "/etc/hscc/tasks.yaml"
+		} else {
+			tasksPath = filepath.Join(dataDir, "tasks.yaml")
+		}
+	}
+
+	fileRoots := getEnv("HSCC_FILE_ROOTS", "")
+	if fileRoots == "" {
+		fileRoots = "managed=" + filepath.Join(dataDir, "managed")
 	}
 
 	return &Config{
-		Host:             host,
-		Port:             port,
-		DBPath:           dbPath,
-		JWTSecret:        jwtSecret,
-		HelperSocketPath: helperSocket,
-		AllowedOrigins:   []string{"http://127.0.0.1:17880", "http://localhost:17880", "https://homeserver310306"},
-		CollectIntervalS: interval,
-		MaxWSClients:     maxClients,
-		WatchtowerURL:    getEnv("WATCHTOWER_HTTP_URL", "http://watchtower:8080"),
-		WatchtowerToken:  getEnv("WATCHTOWER_HTTP_TOKEN", "nodepilot-secret-watchtower-token"),
-		GitHubRepo:       getEnv("GITHUB_REPOSITORY", "StephenDuc2006/NodePilot-homeserver"),
-		Version:          getEnv("HSCC_VERSION", "v1.0.0"),
-		Commit:           getEnv("HSCC_COMMIT", "ede5c8b"),
+		Host:                 host,
+		Port:                 port,
+		DBPath:               dbPath,
+		JWTSecret:            jwtSecret,
+		HelperSocketPath:     helperSocket,
+		AllowedOrigins:       origins,
+		CollectIntervalS:     getInt("HSCC_COLLECT_INTERVAL_S", 3, 1),
+		MaxWSClients:         getInt("HSCC_MAX_WS_CLIENTS", 3, 1),
+		WatchtowerURL:        getEnv("WATCHTOWER_HTTP_URL", "http://watchtower:8080"),
+		WatchtowerToken:      getEnv("WATCHTOWER_HTTP_TOKEN", "nodepilot-secret-watchtower-token"),
+		GitHubRepo:           getEnv("GITHUB_REPOSITORY", "StephenDuc2006/NodePilot-homeserver"),
+		Version:              getEnv("HSCC_VERSION", "v1.0.0"),
+		Commit:               getEnv("HSCC_COMMIT", "ede5c8b"),
+		IdleCollectIntervalS: getInt("HSCC_IDLE_COLLECT_INTERVAL_S", 60, 0),
+		ActiveGraceS:         getInt("HSCC_ACTIVE_GRACE_S", 30, 0),
+		MemoryLimitMiB:       getInt("HSCC_MEMORY_LIMIT_MIB", 100, 0),
+		CookieSecure:         getBool("HSCC_COOKIE_SECURE", false),
+		CookieSameSite:       normalizeSameSite(getEnv("HSCC_COOKIE_SAMESITE", "Strict")),
+		BackupDir:            backupDir,
+		BackupKeep:           getInt("HSCC_BACKUP_KEEP", 5, 1),
+		TasksConfigPath:      tasksPath,
+		FileRoots:            fileRoots,
+		Production:           production,
 	}
+}
+
+func normalizeSameSite(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "none":
+		return "None"
+	case "lax":
+		return "Lax"
+	default:
+		return "Strict"
+	}
+}
+
+func dirExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.IsDir()
 }
 
 func getEnv(key, fallback string) string {
@@ -79,4 +163,20 @@ func getEnv(key, fallback string) string {
 		return val
 	}
 	return fallback
+}
+
+func getInt(key string, fallback, min int) int {
+	v, err := strconv.Atoi(os.Getenv(key))
+	if err != nil || v < min {
+		return fallback
+	}
+	return v
+}
+
+func getBool(key string, fallback bool) bool {
+	v, err := strconv.ParseBool(os.Getenv(key))
+	if err != nil {
+		return fallback
+	}
+	return v
 }

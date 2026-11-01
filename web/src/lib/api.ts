@@ -8,6 +8,14 @@ import {
   ServiceUnit,
   AuditEvent,
   AuditQueryResponse,
+  TaskPreset,
+  TaskExecution,
+  FileItem,
+  FileContent,
+  ProcessInfo,
+  Alert,
+  PowerStatus,
+  MetricSeries,
 } from '../types'
 
 let inMemoryToken: string | null = null
@@ -218,5 +226,93 @@ export async function getAuditEvents(params?: {
   const res = await fetchWithAuth(`/api/v1/audit?${searchParams.toString()}`)
   const json = await res.json()
   if (!res.ok) throw new Error(json.error?.message || 'Không thể tải nhật ký kiểm toán')
+  return json.data
+}
+
+// --- Sprint 3: Tasks, Files, Processes, Alerts & Power APIs ---
+
+export async function getTaskPresets(): Promise<TaskPreset[]> {
+  const res = await fetchWithAuth('/api/v1/tasks/presets')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải danh mục tác vụ')
+  return json.data || []
+}
+
+export async function getTaskExecutions(limit: number = 20): Promise<TaskExecution[]> {
+  const res = await fetchWithAuth(`/api/v1/tasks/executions?limit=${limit}`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải lịch sử chạy tác vụ')
+  return json.data || []
+}
+
+export async function triggerTask(presetId: string): Promise<TaskExecution> {
+  const res = await fetchWithAuth('/api/v1/tasks/executions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ presetId }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Kích hoạt tác vụ thất bại')
+  return json.data
+}
+
+export async function cancelTask(id: string): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/tasks/executions/${encodeURIComponent(id)}/cancel`, {
+    method: 'POST',
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Hủy tác vụ thất bại')
+}
+
+export async function listFiles(path: string = '.'): Promise<FileItem[]> {
+  const res = await fetchWithAuth(`/api/v1/files/list?path=${encodeURIComponent(path)}`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể duyệt thư mục')
+  return json.data || []
+}
+
+export async function getFileContent(path: string): Promise<FileContent> {
+  const res = await fetchWithAuth(`/api/v1/files/content?path=${encodeURIComponent(path)}`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể đọc nội dung file')
+  return json.data
+}
+
+export async function saveFileContent(relPath: string, content: string, expectedSha256?: string): Promise<FileContent> {
+  const res = await fetchWithAuth('/api/v1/files/content', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ relPath, content, expectedSha256 }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Lưu file thất bại')
+  return json.data
+}
+
+export async function getProcesses(sort: string = 'cpu', limit: number = 50): Promise<ProcessInfo[]> {
+  const res = await fetchWithAuth(`/api/v1/system/processes?sort=${encodeURIComponent(sort)}&limit=${limit}`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải danh sách tiến trình')
+  return json.data || []
+}
+
+export async function getAlerts(): Promise<{ active: Alert[]; recent: Alert[] }> {
+  const res = await fetchWithAuth('/api/v1/alerts')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải cảnh báo')
+  return json.data || { active: [], recent: [] }
+}
+
+export async function getPowerStatus(): Promise<PowerStatus> {
+  const res = await fetchWithAuth('/api/v1/system/power-status')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể kiểm tra trạng thái nguồn')
+  return json.data
+}
+
+export async function getHistorySeries(metric: string = 'cpu.usage', scope: string = 'host', duration: string = '24h'): Promise<MetricSeries> {
+  const res = await fetchWithAuth(`/api/v1/system/history/series?metric=${encodeURIComponent(metric)}&scope=${encodeURIComponent(scope)}&duration=${encodeURIComponent(duration)}`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải chuỗi số liệu lịch sử')
   return json.data
 }

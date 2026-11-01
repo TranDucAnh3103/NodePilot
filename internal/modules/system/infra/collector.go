@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"math"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -24,7 +25,22 @@ type SystemCollector struct {
 	lastCPUTimes []cpu.TimesStat
 	lastNetTimes map[string]netIOPrev
 	lastNetTick  time.Time
+
+	// Expensive probes are cached so each tick stays cheap (critical on the
+	// Pentium P6200 and on Windows dev boxes where these calls hit WMI).
+	partitions       []disk.PartitionStat
+	partitionsAt     time.Time
+	tempUnsupported  bool
+	tempProbedAt     time.Time
+	lastTemp         domain.TemperatureInfo
+	isWindows        bool
 }
+
+const (
+	partitionCacheTTL = 60 * time.Second
+	tempReprobeAfter  = 10 * time.Minute
+	tempCacheTTL      = 15 * time.Second
+)
 
 type netIOPrev struct {
 	rxBytes uint64
@@ -40,6 +56,7 @@ func NewSystemCollector() *SystemCollector {
 	return &SystemCollector{
 		cpuCores:     cores,
 		lastNetTimes: make(map[string]netIOPrev),
+		isWindows:    runtime.GOOS == "windows",
 	}
 }
 
@@ -114,11 +131,14 @@ func (c *SystemCollector) getCPUMetrics(ctx context.Context) domain.CPUMetrics {
 		Cores: c.cpuCores,
 	}
 
-	// Load Average
-	if l, err := load.AvgWithContext(ctx); err == nil {
-		res.Load1 = round2(l.Load1)
-		res.Load5 = round2(l.Load5)
-		res.Load15 = round2(l.Load15)
+	// Load Average. On Windows gopsutil emulates it with a permanent background
+	// PDH sampling goroutine, which defeats hibernation - skip it there.
+	if !c.isWindows {
+		if l, err := load.AvgWithContext(ctx); err == nil {
+			res.Load1 = round2(l.Load1)
+			res.Load5 = round2(l.Load5)
+			res.Load15 = round2(l.Load15)
+		}
 	}
 
 	// CPU Delta calculation (BUG-1.1 avoidance)
@@ -173,10 +193,15 @@ func (c *SystemCollector) getMemoryMetrics(ctx context.Context) domain.MemoryMet
 
 func (c *SystemCollector) getDiskPartitions(ctx context.Context) []domain.DiskPartition {
 	var res []domain.DiskPartition
-	partitions, err := disk.PartitionsWithContext(ctx, false)
-	if err != nil {
-		return res
+	if c.partitions == nil || time.Since(c.partitionsAt) > partitionCacheTTL {
+		partitions, err := disk.PartitionsWithContext(ctx, false)
+		if err != nil {
+			return res
+		}
+		c.partitions = partitions
+		c.partitionsAt = time.Now()
 	}
+	partitions := c.partitions
 
 	// Exclude virtual/dummy filesystems (FR-SYS-03)
 	excludedFSTypes := map[string]bool{
@@ -274,7 +299,25 @@ func (c *SystemCollector) getNetworkMetrics(ctx context.Context, now time.Time) 
 }
 
 func (c *SystemCollector) getTemperature(ctx context.Context) domain.TemperatureInfo {
-	temps, err := sensors.TemperaturesWithContext(ctx)
+	// Unsupported hosts (most Windows boxes, many VMs) are re-probed rarely:
+	// every failed probe is a costly WMI / sysfs scan.
+	if c.tempUnsupported && time.Since(c.tempProbedAt) < tempReprobeAfter {
+		return domain.TemperatureInfo{Supported: false, Celsius: nil}
+	}
+	if !c.tempUnsupported && !c.tempProbedAt.IsZero() && time.Since(c.tempProbedAt) < tempCacheTTL {
+		return c.lastTemp
+	}
+	info := c.probeTemperature(ctx)
+	c.tempProbedAt = time.Now()
+	c.tempUnsupported = !info.Supported
+	c.lastTemp = info
+	return info
+}
+
+func (c *SystemCollector) probeTemperature(ctx context.Context) domain.TemperatureInfo {
+	tctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	temps, err := sensors.TemperaturesWithContext(tctx)
 	if err != nil || len(temps) == 0 {
 		// BR-08: Never forge 0°C, report unsupported explicitly
 		return domain.TemperatureInfo{

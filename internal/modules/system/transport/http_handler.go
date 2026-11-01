@@ -2,22 +2,37 @@ package transport
 
 import (
 	"errors"
+	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"hscc/internal/modules/alerts"
 	systemInfra "hscc/internal/modules/system/infra"
 	"hscc/internal/modules/telemetry"
 	"hscc/internal/platform/logging"
 )
 
 type SystemHandler struct {
-	telemetrySvc *telemetry.TelemetryService
-	updateSvc    *systemInfra.UpdateService
+	telemetrySvc  *telemetry.TelemetryService
+	updateSvc     *systemInfra.UpdateService
+	procCollector *systemInfra.ProcessCollector
+	historyStore  *telemetry.HistoryStore
+	alertsEngine  *alerts.Engine
 }
 
-func NewSystemHandler(telemetrySvc *telemetry.TelemetryService, updateSvc *systemInfra.UpdateService) *SystemHandler {
+func NewSystemHandler(
+	telemetrySvc *telemetry.TelemetryService,
+	updateSvc *systemInfra.UpdateService,
+	procCollector *systemInfra.ProcessCollector,
+	historyStore *telemetry.HistoryStore,
+	alertsEngine *alerts.Engine,
+) *SystemHandler {
 	return &SystemHandler{
-		telemetrySvc: telemetrySvc,
-		updateSvc:    updateSvc,
+		telemetrySvc:  telemetrySvc,
+		updateSvc:     updateSvc,
+		procCollector: procCollector,
+		historyStore:  historyStore,
+		alertsEngine:  alertsEngine,
 	}
 }
 
@@ -27,9 +42,100 @@ func (h *SystemHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber
 	sysGroup.Get("/disks", h.Disks)
 	sysGroup.Get("/networks", h.Networks)
 	sysGroup.Get("/history", h.History)
+	sysGroup.Get("/history/series", h.HistorySeries)
+	sysGroup.Get("/processes", h.Processes)
+	sysGroup.Get("/power-status", h.PowerStatus)
 	sysGroup.Get("/version", h.Version)
 	sysGroup.Get("/update/check", h.CheckUpdate)
 	sysGroup.Post("/update/trigger", h.TriggerUpdate)
+
+	alertsGroup := router.Group("/alerts", authMiddleware)
+	alertsGroup.Get("", h.Alerts)
+}
+
+func (h *SystemHandler) PowerStatus(c fiber.Ctx) error {
+	st := h.telemetrySvc.Status()
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  st,
+		"error": nil,
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+	})
+}
+
+func (h *SystemHandler) Processes(c fiber.Ctx) error {
+	sortBy := c.Query("sort", "cpu") // "cpu", "memory", "pid"
+	limit, _ := strconv.Atoi(c.Query("limit", "50"))
+
+	procs, err := h.procCollector.ListProcesses(c.Context(), sortBy, limit)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "PROCESSES_FAILED", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  procs,
+		"error": nil,
+		"meta":  fiber.Map{"requestId": getReqID(c), "count": len(procs)},
+	})
+}
+
+func (h *SystemHandler) HistorySeries(c fiber.Ctx) error {
+	if h.historyStore == nil {
+		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "NOT_AVAILABLE", "message": "History store not configured"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	metric := c.Query("metric", "cpu.usage")
+	scope := c.Query("scope", "host")
+	durationStr := c.Query("duration", "24h")
+	rng, err := time.ParseDuration(durationStr)
+	if err != nil || rng <= 0 {
+		rng = 24 * time.Hour
+	}
+
+	series, err := h.historyStore.Query(c.Context(), metric, scope, rng, 120)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "QUERY_FAILED", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  series,
+		"error": nil,
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+	})
+}
+
+func (h *SystemHandler) Alerts(c fiber.Ctx) error {
+	if h.alertsEngine == nil {
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{
+			"data": fiber.Map{
+				"active": []alerts.Alert{},
+				"recent": []alerts.Alert{},
+			},
+			"error": nil,
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	active, recent := h.alertsEngine.Snapshot()
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data": fiber.Map{
+			"active": active,
+			"recent": recent,
+		},
+		"error": nil,
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+	})
 }
 
 func (h *SystemHandler) Version(c fiber.Ctx) error {

@@ -159,3 +159,90 @@ export interface AuditQueryResponse {
   page: number
   pageSize: number
 }
+
+// --- Sprint 3: Tasks, Files, Processes, Alerts & Power ---
+
+export interface TaskPreset {
+  id: string
+  name: string
+  description: string
+  category: 'maintenance' | 'backup' | 'diagnostics' | string
+  timeout: number
+  allowedRoles: string[]
+  dangerLevel: 'safe' | 'moderate' | 'high'
+  confirmationMsg?: string
+}
+
+export interface TaskExecution {
+  id: string
+  presetId: string
+  presetName?: string
+  actorId: string
+  actorUsername: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out'
+  output: string
+  exitCode: number
+  startedAt: string
+  completedAt?: string
+  errorMessage?: string
+}
+
+export interface FileItem {
+  name: string
+  relPath: string
+  isDir: boolean
+  size: number
+  modTime: string
+}
+
+export interface FileContent {
+  relPath: string
+  content: string
+  sha256: string
+  size: number
+  modTime: string
+  isEditable: boolean
+}
+
+export interface ProcessInfo {
+  pid: number
+  name: string
+  username: string
+  category: 'wavelink' | 'docker' | 'web' | 'database' | 'network' | 'hscc' | 'system' | string
+  cpuPercent: number
+  memoryBytes: number
+  memoryPercent: number
+  status: string
+  commandLine: string
+}
+
+export interface Alert {
+  id: string
+  key: string
+  kind: 'cpu' | 'memory' | 'disk' | 'container' | string
+  severity: 'warning' | 'critical'
+  title: string
+  message: string
+  value: number
+  threshold: number
+  triggeredAt: string
+  resolvedAt?: string
+  active: boolean
+}
+
+export interface PowerStatus {
+  mode: 'active' | 'idle' | 'hibernate'
+  subscribers: number
+  activeIntervalSeconds: number
+  idleIntervalSeconds: number
+  lastCollectedAt: string
+  collectCount: number
+}
+
+export interface MetricSeries {
+  metric: string
+  scope: string
+  unit: string
+  stepSeconds: number
+  points: Array<{ ts: string; value: number }>
+}

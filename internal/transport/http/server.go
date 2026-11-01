@@ -13,12 +13,17 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/google/uuid"
-	authApp "hscc/internal/modules/auth/app"
-	authTransport "hscc/internal/modules/auth/transport"
+	"hscc/internal/modules/alerts"
 	auditApp "hscc/internal/modules/audit/app"
 	auditTransport "hscc/internal/modules/audit/transport"
+	authApp "hscc/internal/modules/auth/app"
+	authTransport "hscc/internal/modules/auth/transport"
+	filesApp "hscc/internal/modules/files/app"
+	filesTransport "hscc/internal/modules/files/transport"
 	systemInfra "hscc/internal/modules/system/infra"
 	systemTransport "hscc/internal/modules/system/transport"
+	tasksApp "hscc/internal/modules/tasks/app"
+	tasksTransport "hscc/internal/modules/tasks/transport"
 	"hscc/internal/modules/telemetry"
 	workloadApp "hscc/internal/modules/workloads/app"
 	workloadTransport "hscc/internal/modules/workloads/transport"
@@ -30,15 +35,20 @@ import (
 )
 
 type Server struct {
-	app          *fiber.App
-	cfg          *config.Config
-	db           *sqlite.DB
-	telemetrySvc *telemetry.TelemetryService
-	jwtManager   *security.JWTManager
-	authSvc      *authApp.AuthService
-	auditSvc     *auditApp.AuditService
-	workloadSvc  *workloadApp.WorkloadService
-	webFS        fs.FS
+	app           *fiber.App
+	cfg           *config.Config
+	db            *sqlite.DB
+	telemetrySvc  *telemetry.TelemetryService
+	jwtManager    *security.JWTManager
+	authSvc       *authApp.AuthService
+	auditSvc      *auditApp.AuditService
+	workloadSvc   *workloadApp.WorkloadService
+	taskSvc       *tasksApp.TaskService
+	fileSvc       *filesApp.FileService
+	historyStore  *telemetry.HistoryStore
+	alertsEngine  *alerts.Engine
+	procCollector *systemInfra.ProcessCollector
+	webFS         fs.FS
 }
 
 func NewServer(
@@ -49,6 +59,11 @@ func NewServer(
 	authSvc *authApp.AuthService,
 	auditSvc *auditApp.AuditService,
 	workloadSvc *workloadApp.WorkloadService,
+	taskSvc *tasksApp.TaskService,
+	fileSvc *filesApp.FileService,
+	historyStore *telemetry.HistoryStore,
+	alertsEngine *alerts.Engine,
+	procCollector *systemInfra.ProcessCollector,
 	webFS fs.FS,
 ) *Server {
 	app := fiber.New(fiber.Config{
@@ -57,15 +72,20 @@ func NewServer(
 	})
 
 	s := &Server{
-		app:          app,
-		cfg:          cfg,
-		db:           db,
-		telemetrySvc: telemetrySvc,
-		jwtManager:   jwtManager,
-		authSvc:      authSvc,
-		auditSvc:     auditSvc,
-		workloadSvc:  workloadSvc,
-		webFS:        webFS,
+		app:           app,
+		cfg:           cfg,
+		db:            db,
+		telemetrySvc:  telemetrySvc,
+		jwtManager:    jwtManager,
+		authSvc:       authSvc,
+		auditSvc:      auditSvc,
+		workloadSvc:   workloadSvc,
+		taskSvc:       taskSvc,
+		fileSvc:       fileSvc,
+		historyStore:  historyStore,
+		alertsEngine:  alertsEngine,
+		procCollector: procCollector,
+		webFS:         webFS,
 	}
 
 	s.setupMiddlewares()
@@ -89,7 +109,7 @@ func (s *Server) setupMiddlewares() {
 		return c.Next()
 	})
 
-	// 3. CORS
+	// 3. CORS - Supports Vercel UI frontend & Localhost
 	s.app.Use(cors.New(cors.Config{
 		AllowOrigins:     s.cfg.AllowedOrigins,
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID", "Idempotency-Key"},
@@ -138,7 +158,6 @@ func (s *Server) setupRoutes() {
 	})
 
 	api.Get("/health/ready", func(c fiber.Ctx) error {
-		// Check SQLite
 		if err := s.db.PingContext(context.Background()); err != nil {
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
 				"status": "degraded",
@@ -155,9 +174,9 @@ func (s *Server) setupRoutes() {
 	authH := authTransport.NewAuthHandler(s.authSvc)
 	authH.RegisterRoutes(api, authMiddleware)
 
-	// Register System Routes
+	// Register System Routes (History, Processes, Alerts, Power-status)
 	updateSvc := systemInfra.NewUpdateService(s.cfg, s.db)
-	sysH := systemTransport.NewSystemHandler(s.telemetrySvc, updateSvc)
+	sysH := systemTransport.NewSystemHandler(s.telemetrySvc, updateSvc, s.procCollector, s.historyStore, s.alertsEngine)
 	sysH.RegisterRoutes(api, authMiddleware)
 
 	// Register Audit Routes (Immutable Audit Trail)
@@ -172,8 +191,20 @@ func (s *Server) setupRoutes() {
 		workloadH.RegisterRoutes(api, authMiddleware)
 	}
 
-	// Register Realtime WebSocket Route
-	wsH := wsTransport.NewMetricsWSHandler(s.telemetrySvc, s.jwtManager, s.cfg.AllowedOrigins)
+	// Register Tasks Routes (Preset Tasks & Safe SQLite Backup)
+	if s.taskSvc != nil {
+		tasksH := tasksTransport.NewTasksHandler(s.taskSvc)
+		tasksH.RegisterRoutes(api, authMiddleware)
+	}
+
+	// Register Scoped File Manager Routes (Sandbox)
+	if s.fileSvc != nil {
+		filesH := filesTransport.NewFilesHandler(s.fileSvc)
+		filesH.RegisterRoutes(api, authMiddleware)
+	}
+
+	// Register Realtime WebSocket Route with alerts integration
+	wsH := wsTransport.NewMetricsWSHandler(s.telemetrySvc, s.alertsEngine, s.jwtManager, s.cfg.AllowedOrigins)
 	s.app.Get("/ws/metrics", wsH.UpgradeMiddleware(), wsH.HandleWS())
 
 	// Serve Static Single-Page Application (SPA)
@@ -182,7 +213,6 @@ func (s *Server) setupRoutes() {
 			FS:         s.webFS,
 			IndexNames: []string{"index.html"},
 			NotFoundHandler: func(c fiber.Ctx) error {
-				// Don't intercept API requests as 404 HTML
 				if strings.HasPrefix(c.Path(), "/api/") || strings.HasPrefix(c.Path(), "/ws/") {
 					return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 						"data":  nil,
@@ -190,7 +220,6 @@ func (s *Server) setupRoutes() {
 					})
 				}
 
-				// SPA fallback: return index.html for client-side routing
 				indexData, err := fs.ReadFile(s.webFS, "index.html")
 				if err != nil {
 					return c.Status(fiber.StatusNotFound).SendString("404 Not Found")

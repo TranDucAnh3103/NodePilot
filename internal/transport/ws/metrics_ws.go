@@ -9,23 +9,27 @@ import (
 
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
+	"hscc/internal/modules/alerts"
 	"hscc/internal/modules/telemetry"
 	"hscc/internal/platform/security"
 )
 
 type MetricsWSHandler struct {
 	telemetrySvc   *telemetry.TelemetryService
+	alertsEngine   *alerts.Engine
 	jwtManager     *security.JWTManager
 	allowedOrigins []string
 }
 
 func NewMetricsWSHandler(
 	telemetrySvc *telemetry.TelemetryService,
+	alertsEngine *alerts.Engine,
 	jwtManager *security.JWTManager,
 	allowedOrigins []string,
 ) *MetricsWSHandler {
 	return &MetricsWSHandler{
 		telemetrySvc:   telemetrySvc,
+		alertsEngine:   alertsEngine,
 		jwtManager:     jwtManager,
 		allowedOrigins: allowedOrigins,
 	}
@@ -58,9 +62,13 @@ func (h *MetricsWSHandler) isOriginAllowed(origin string) bool {
 	}
 	host := parsed.Host
 
-	// Allow localhost / tailscale domain
+	// Allow Vercel deployments and localhost / tailscale domains
+	if strings.HasSuffix(host, ".vercel.app") {
+		return true
+	}
+
 	for _, allowed := range h.allowedOrigins {
-		if strings.Contains(allowed, host) || strings.EqualFold(origin, allowed) {
+		if allowed == "*" || strings.Contains(allowed, host) || strings.EqualFold(origin, allowed) {
 			return true
 		}
 	}
@@ -133,6 +141,14 @@ func (h *MetricsWSHandler) HandleWS() fiber.Handler {
 		}
 		defer h.telemetrySvc.Unsubscribe(subCh)
 
+		// 3. Optional Alert Stream
+		var alertCh <-chan alerts.Alert
+		var alertUnsub func()
+		if h.alertsEngine != nil {
+			alertCh, alertUnsub = h.alertsEngine.Subscribe()
+			defer alertUnsub()
+		}
+
 		// Goroutine to handle client disconnection & ping responses
 		closeCh := make(chan struct{})
 		go func() {
@@ -156,6 +172,15 @@ func (h *MetricsWSHandler) HandleWS() fiber.Handler {
 				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 					return
 				}
+			case a, ok := <-alertCh:
+				if !ok {
+					continue
+				}
+				_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				_ = conn.WriteJSON(fiber.Map{
+					"type":    "alert.triggered",
+					"payload": a,
+				})
 			case snap, ok := <-subCh:
 				if !ok {
 					return

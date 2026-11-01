@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { User, HostSnapshot, UpdateCheckResult } from './types'
-import { getMe, refreshToken, logout, checkUpdate } from './lib/api'
+import { AlertTriangle, X } from 'lucide-react'
+import { User, HostSnapshot, UpdateCheckResult, Alert } from './types'
+import { getMe, refreshToken, logout, checkUpdate, getAlerts } from './lib/api'
 import { MetricsWebSocketClient } from './lib/ws'
 import { Navbar } from './components/Navbar'
 import { Sidebar } from './components/Sidebar'
@@ -11,6 +12,9 @@ import { LoginView } from './views/LoginView'
 import { OverviewView } from './views/OverviewView'
 import { WorkloadsView } from './views/WorkloadsView'
 import { ServicesView } from './views/ServicesView'
+import { TasksView } from './views/TasksView'
+import { FilesView } from './views/FilesView'
+import { ProcessesView } from './views/ProcessesView'
 import { AuditView } from './views/AuditView'
 import { SettingsView } from './views/SettingsView'
 import { transition } from './lib/motion'
@@ -21,6 +25,9 @@ export function App() {
   const [currentTab, setCurrentTab] = useState('overview')
   const [snapshot, setSnapshot] = useState<HostSnapshot | null>(null)
   const [isStale, setIsStale] = useState(false)
+
+  // Real-time active alerts banner
+  const [activeAlerts, setActiveAlerts] = useState<Alert[]>([])
 
   // Update management state
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false)
@@ -50,7 +57,7 @@ export function App() {
     initAuth()
   }, [])
 
-  // 2. Initial update check when authenticated
+  // 2. Initial update check & active alerts when authenticated
   const handleCheckUpdate = async () => {
     setIsCheckingUpdate(true)
     try {
@@ -66,10 +73,13 @@ export function App() {
   useEffect(() => {
     if (currentUser) {
       handleCheckUpdate()
+      getAlerts()
+        .then((res) => setActiveAlerts(res.active || []))
+        .catch(() => {})
     }
   }, [currentUser])
 
-  // 3. Setup WebSocket when user is logged in
+  // 3. Setup WebSocket when user is logged in with hibernation & alerts
   useEffect(() => {
     if (!currentUser) {
       if (wsClientRef.current) {
@@ -116,7 +126,14 @@ export function App() {
       setIsStale(stale)
     }
 
-    const client = new MetricsWebSocketClient(onSnapshot, onStale)
+    const onAlert = (alert: Alert) => {
+      setActiveAlerts((prev) => {
+        const filtered = prev.filter((a) => a.key !== alert.key)
+        return alert.active ? [alert, ...filtered] : filtered
+      })
+    }
+
+    const client = new MetricsWebSocketClient(onSnapshot, onStale, onAlert)
     client.connect()
     wsClientRef.current = client
 
@@ -131,6 +148,7 @@ export function App() {
     setSnapshot(null)
     setCpuHistory([])
     setNetHistory([])
+    setActiveAlerts([])
   }
 
   if (isInitializing) {
@@ -159,6 +177,29 @@ export function App() {
         }}
         onLogout={handleLogout}
       />
+
+      {/* Active System Alerts Banner */}
+      {activeAlerts.length > 0 && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 flex items-center justify-between text-xs text-amber-300">
+          <div className="flex items-center space-x-2.5 overflow-x-auto">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-400" />
+            <span className="font-bold">Cảnh báo tài nguyên:</span>
+            <span>{activeAlerts[0].title} — {activeAlerts[0].message}</span>
+            {activeAlerts.length > 1 && (
+              <span className="text-[10px] bg-amber-500/20 px-2 py-0.5 rounded-full font-mono">
+                +{activeAlerts.length - 1} cảnh báo khác
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => setActiveAlerts([])}
+            className="p-1 text-amber-400 hover:text-amber-200 cursor-pointer"
+            title="Ẩn thông báo"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       <StaleBanner isStale={isStale} />
 
@@ -191,16 +232,9 @@ export function App() {
                 )}
                 {currentTab === 'docker' && <WorkloadsView />}
                 {currentTab === 'services' && <ServicesView />}
-                {currentTab === 'tasks' && (
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-12 text-center text-slate-400 space-y-3">
-                    <div className="text-sm font-semibold text-slate-200">
-                      Tác vụ định sẵn (Cron & Systemd Timers)
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      Bộ máy lập lịch sao lưu và bảo trì tự động đang giám sát 4 cron jobs của máy chủ.
-                    </p>
-                  </div>
-                )}
+                {currentTab === 'processes' && <ProcessesView />}
+                {currentTab === 'tasks' && <TasksView />}
+                {currentTab === 'files' && <FilesView />}
                 {currentTab === 'audit' && <AuditView />}
                 {currentTab === 'settings' && <SettingsView />}
               </motion.div>

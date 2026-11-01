@@ -15,7 +15,10 @@ Write-Host "==========================================================" -Foregro
 Write-Host " NodePilot HSCC - Live Development Mode (Hot Reload)      " -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# 1. Ensure local data directory
+# 1. Clean lingering processes from previous sessions
+& "$ScriptDir\stop.ps1" | Out-Null
+
+# 2. Ensure local data directory
 if (-not (Test-Path "$RootDir\data")) {
     New-Item -ItemType Directory -Path "$RootDir\data" | Out-Null
 }
@@ -24,7 +27,7 @@ if (-not (Test-Path "$RootDir\bin")) {
     New-Item -ItemType Directory -Path "$RootDir\bin" | Out-Null
 }
 
-# 2. Compile binaries if needed
+# 3. Compile binaries if needed
 if ((-not (Test-Path "$RootDir\bin\hscc-cli.exe")) -or (-not (Test-Path "$RootDir\bin\hscc-api.exe"))) {
     Write-Host "[...] Compiling Go backend binaries..." -ForegroundColor Yellow
     go build -o "$RootDir\bin\hscc-cli.exe" ./cmd/hscc-cli
@@ -32,7 +35,7 @@ if ((-not (Test-Path "$RootDir\bin\hscc-cli.exe")) -or (-not (Test-Path "$RootDi
     Write-Host "[OK] Backend binaries compiled." -ForegroundColor Green
 }
 
-# 3. Bootstrap or verify default admin user
+# 4. Bootstrap or verify default admin user
 Write-Host "[...] Verifying admin account..." -ForegroundColor Yellow
 $null = & "$RootDir\bin\hscc-cli.exe" reset-password --username admin --password adminpassword123 2>&1
 if ($LASTEXITCODE -ne 0) {
@@ -40,7 +43,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "[OK] Admin account verified (admin / adminpassword123)" -ForegroundColor Green
 
-# 4. Check web dependencies
+# 5. Check web dependencies
 if (-not (Test-Path "$RootDir\web\node_modules")) {
     Write-Host "[...] Installing frontend dependencies (npm install)..." -ForegroundColor Yellow
     Push-Location "$RootDir\web"
@@ -49,17 +52,16 @@ if (-not (Test-Path "$RootDir\web\node_modules")) {
     Write-Host "[OK] Frontend dependencies installed." -ForegroundColor Green
 }
 
-# 5. Stop any existing backend process
-Get-Process -Name "hscc-api" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-
 # 6. Start Backend API in background
 $env:HSCC_HOST = "127.0.0.1"
 $env:HSCC_PORT = "$BackendPort"
 $env:HSCC_DB_PATH = "$RootDir\data\hscc.db"
-$env:HSCC_LOG_LEVEL = "DEBUG"
+$env:HSCC_LOG_LEVEL = "INFO"
+$env:HSCC_IDLE_COLLECT_INTERVAL_S = "60"
+$env:HSCC_ACTIVE_GRACE_S = "15"
 
 Write-Host "[...] Starting Backend API on http://127.0.0.1:$BackendPort ..." -ForegroundColor Yellow
-$backendProcess = Start-Process -FilePath "$RootDir\bin\hscc-api.exe" -PassThru
+$backendProcess = Start-Process -FilePath "$RootDir\bin\hscc-api.exe" -PassThru -NoNewWindow
 
 Start-Sleep -Seconds 2
 
@@ -78,13 +80,28 @@ Write-Host ""
 
 Start-Process $frontendURL
 
+# Register exit handler to guarantee process cleanup
+$cleanupScript = {
+    Write-Host "`n[*] Cleaning up background processes..." -ForegroundColor Yellow
+    if ($backendProcess -and (-not $backendProcess.HasExited)) {
+        Stop-Process -Id $backendProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+    Get-Process -Name "hscc-api" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    $p5173 = Get-NetTCPConnection -LocalPort 5173 -ErrorAction SilentlyContinue
+    if ($p5173) {
+        foreach ($c in $p5173) {
+            if ($c.OwningProcess -gt 0) {
+                Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    Write-Host "[OK] Cleanup complete." -ForegroundColor Green
+}
+
 try {
     Push-Location "$RootDir\web"
     npm run dev
 } finally {
     Pop-Location
-    if ($backendProcess -and (-not $backendProcess.HasExited)) {
-        Write-Host "Stopping backend process..." -ForegroundColor Yellow
-        Stop-Process -Id $backendProcess.Id -Force -ErrorAction SilentlyContinue
-    }
+    & $cleanupScript
 }

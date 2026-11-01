@@ -11,18 +11,20 @@ echo  [1] Standalone Single Binary (Fastest - Auto Admin and Browser)
 echo  [2] Live Dev Hot-Reload (Go Backend + Vite React 19)
 echo  [3] Docker Compose Stack (hscc-api + Watchtower)
 echo  [4] Run Full Unit Tests and Build Verification
-echo  [5] Exit
+echo  [5] Stop and Clean All Lingering Processes
+echo  [6] Exit
 echo.
 echo ==========================================================
 set choice=1
-set /p choice="Select an option [1-5] (Default: 1): "
+set /p choice="Select an option [1-6] (Default: 1): "
 set opt=%choice:~0,1%
 
 if "%opt%"=="1" goto STANDALONE
 if "%opt%"=="2" goto DEV
 if "%opt%"=="3" goto DOCKER
 if "%opt%"=="4" goto TEST
-if "%opt%"=="5" goto EXIT
+if "%opt%"=="5" goto STOP
+if "%opt%"=="6" goto EXIT
 goto INVALID
 
 :STANDALONE
@@ -71,8 +73,15 @@ echo [OK] All tests and builds passed with 100%% success!
 pause
 goto EXIT
 
+:STOP
+cls
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0stop.ps1"
+echo.
+pause
+goto EXIT
+
 :INVALID
-echo [!] Invalid selection. Please re-run and choose 1 through 5.
+echo [!] Invalid selection. Please re-run and choose 1 through 6.
 pause
 goto EXIT
 
