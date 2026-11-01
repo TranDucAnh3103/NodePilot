@@ -142,6 +142,16 @@ NodePilot-homeserver/
 
 ## 6. Hướng dẫn Khởi chạy Nhanh
 
+### Cách 1: Triển khai Docker (Tiết kiệm CPU/RAM máy chủ qua CI/CD)
+GitHub Actions tự động biên dịch và đẩy image nhẹ sẵn có lên GitHub Container Registry (GHCR). Trên máy chủ, bạn chỉ cần kéo về chạy mà **không tốn 1% CPU biên dịch**:
+
+```bash
+docker compose pull
+docker compose up -d
+docker compose exec hscc-api hscc-cli bootstrap --username admin --role admin
+```
+
+### Cách 2: Biên dịch Single Binary thủ công
 Xem hướng dẫn chi tiết tại [START.md](file:///f:/Build/NodePilot-homeserver/START.md).
 
 ```bash

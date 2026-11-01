@@ -14,7 +14,31 @@ Tài liệu này cung cấp hướng dẫn từng bước chi tiết để biên
 
 ---
 
-## 2. Khởi chạy Nhanh (Chế độ Single Binary Sản xuất)
+## 2. Khởi chạy Nhanh qua Docker (Khuyên Dùng cho Máy Chủ Acer Aspire 5733Z)
+
+> [!TIP]
+> **Giải pháp Tiết kiệm 100% Tài nguyên Máy chủ**: Hệ thống CI/CD của GitHub Actions đã tự động biên dịch toàn bộ Frontend và Backend trên đám mây. Máy chủ **hoàn toàn không cần chạy lệnh `build`**, không tốn CPU hay RAM để biên dịch.
+
+### Triển khai chỉ với 2 câu lệnh:
+
+```bash
+# 1. Kéo image nhẹ đã đóng gói sẵn từ GitHub Container Registry
+docker compose pull
+
+# 2. Khởi chạy container với giới hạn tài nguyên nghiêm ngặt (CPU 0.5 core, RAM <= 120M)
+docker compose up -d
+```
+
+### Khởi tạo tài khoản Quản trị viên bên trong container:
+```bash
+docker compose exec hscc-api hscc-cli bootstrap --username admin --role admin
+```
+
+Truy cập hệ thống ngay tại: `http://<IP_MAY_CHU>:17880`
+
+---
+
+## 3. Khởi chạy Thủ công (Chế độ Single Binary Sản xuất)
 
 Toàn bộ giao diện Web SPA được nhúng trực tiếp vào file nhị phân Go. Bạn chỉ cần thực hiện 4 bước sau:
 

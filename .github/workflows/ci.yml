@@ -1,0 +1,159 @@
+name: CI/CD Pipeline & Offload Builder
+
+on:
+  push:
+    branches: [ master, main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # ==============================================================
+  # Job 1: Test & Lint Quality Gate
+  # ==============================================================
+  test:
+    name: Test & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+
+      - name: Run Go Unit Tests
+        run: go test -v -race ./...
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build & Typecheck Frontend
+        working-directory: web
+        run: npm run build
+
+  # ==============================================================
+  # Job 2: Cross-compile Single Binaries (Offload from Homeserver)
+  # ==============================================================
+  build-binaries:
+    name: Build Standalone Binaries
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            ext: ""
+          - os: windows
+            arch: amd64
+            ext: ".exe"
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build Web SPA Assets
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+
+      - name: Compile Go Binaries (${{ matrix.os }}/${{ matrix.arch }})
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p release-bin
+          TAG_NAME=${{ github.ref_name }}
+          COMMIT_SHA=${{ github.sha }}
+          go build -ldflags="-s -w -X main.version=${TAG_NAME} -X main.commit=${COMMIT_SHA}" -o release-bin/hscc-api-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd/hscc-api
+          go build -ldflags="-s -w -X main.version=${TAG_NAME} -X main.commit=${COMMIT_SHA}" -o release-bin/hscc-cli-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd/hscc-cli
+
+      - name: Upload Binaries as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodepilot-binaries-${{ matrix.os }}-${{ matrix.arch }}
+          path: release-bin/*
+
+      - name: Publish to GitHub Release (Tag Triggers)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-bin/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==============================================================
+  # Job 3: Build & Publish Pre-compiled Docker Image to GHCR
+  # ==============================================================
+  docker-publish:
+    name: Build & Push Docker Image
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+            type=ref,event=tag
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

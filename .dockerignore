@@ -1,0 +1,40 @@
+# Git & Metadata
+.git/
+.gitignore
+.gitattributes
+
+# Build outputs & binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+hscc-api
+hscc-helper
+hscc-cli
+dist/
+
+# SQLite databases & runtime data
+*.db
+*.db-wal
+*.db-shm
+data/
+
+# Logs
+logs/
+*.log
+
+# Frontend local dev artifacts
+web/node_modules/
+web/dist/
+
+# Documentation source documents
+docs/
+*.docx
+*.pdf
+
+# Editor & IDE artifacts
+.vscode/
+.idea/
+.DS_Store

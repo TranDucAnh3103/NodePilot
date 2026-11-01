@@ -1,0 +1,39 @@
+services:
+  hscc-api:
+    image: ${HSCC_IMAGE:-ghcr.io/stephenduc2006/nodepilot-hscc:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nodepilot-hscc-api
+    restart: unless-stopped
+    ports:
+      - "17880:17880"
+    environment:
+      - HSCC_ADDR=0.0.0.0:17880
+      - HSCC_DB_PATH=/var/lib/hscc/hscc.db
+      - HSCC_JWT_SECRET=${HSCC_JWT_SECRET:-nodepilot-secure-random-jwt-token-key-32b}
+      - HSCC_HELPER_SOCKET=/run/hscc/helper.sock
+      - HSCC_LOG_LEVEL=${HSCC_LOG_LEVEL:-INFO}
+    volumes:
+      # Persistent SQLite WAL database
+      - ./data:/var/lib/hscc:rw
+      # Read-only host Docker socket for 100% container observability
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Host kernel and system stats
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      # Privileged root helper IPC socket
+      - /run/hscc:/run/hscc:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 120M
+        reservations:
+          cpus: "0.05"
+          memory: 30M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
