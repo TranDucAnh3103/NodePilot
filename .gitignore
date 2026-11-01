@@ -1,0 +1,42 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/hscc-api
+/hscc-helper
+/hscc-cli
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Go workspace file
+go.work
+
+# SQLite databases
+*.db
+*.db-wal
+*.db-shm
+/data/
+
+# Environment files
+.env
+*.local.env
+
+# Logs
+logs/
+*.log
+
+# Node & Frontend
+node_modules/
+dist/
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
