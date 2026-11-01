@@ -84,7 +84,7 @@ func (s *UpdateService) CheckUpdate(ctx context.Context) (*UpdateCheckResult, er
 
 	repo := s.cfg.GitHubRepo
 	if repo == "" {
-		repo = "StephenDuc2006/NodePilot-homeserver"
+		repo = "TranDucAnh3103/NodePilot"
 	}
 
 	// 1. Query latest commit from GitHub API

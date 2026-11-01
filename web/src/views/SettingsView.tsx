@@ -150,7 +150,7 @@ export const SettingsView: React.FC = () => {
             <div>
               <span className="text-slate-500 block text-[10px] uppercase font-mono">Nguồn Image</span>
               <span className="font-mono text-slate-300 mt-0.5 block truncate">
-                ghcr.io/stephenduc2006/nodepilot-hscc
+                {updateInfo?.repository ? `ghcr.io/${updateInfo.repository.toLowerCase()}` : 'ghcr.io/tranducanh3103/nodepilot'}
               </span>
             </div>
           </div>

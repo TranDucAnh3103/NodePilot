@@ -1,6 +1,6 @@
 services:
   hscc-api:
-    image: ${HSCC_IMAGE:-ghcr.io/stephenduc2006/nodepilot-hscc:latest}
+    image: ${HSCC_IMAGE:-ghcr.io/tranducanh3103/nodepilot:latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -16,7 +16,7 @@ services:
       - HSCC_LOG_LEVEL=${HSCC_LOG_LEVEL:-INFO}
       - WATCHTOWER_HTTP_URL=http://watchtower:8080
       - WATCHTOWER_HTTP_TOKEN=${WATCHTOWER_TOKEN:-nodepilot-watchtower-auth-token}
-      - GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-StephenDuc2006/NodePilot-homeserver}
+      - GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-TranDucAnh3103/NodePilot}
       - HSCC_VERSION=${HSCC_VERSION:-v1.0.0}
       - HSCC_COMMIT=${HSCC_COMMIT:-ede5c8b}
     labels:

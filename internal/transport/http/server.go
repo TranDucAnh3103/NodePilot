@@ -207,12 +207,30 @@ func (s *Server) setupRoutes() {
 	wsH := wsTransport.NewMetricsWSHandler(s.telemetrySvc, s.alertsEngine, s.jwtManager, s.cfg.AllowedOrigins)
 	s.app.Get("/ws/metrics", wsH.UpgradeMiddleware(), wsH.HandleWS())
 
+	// Top-level friendly navigation redirects for browser address bar
+	s.app.Get("/login", func(c fiber.Ctx) error {
+		return c.Redirect().To("/")
+	})
+	s.app.Get("/auth/login", func(c fiber.Ctx) error {
+		return c.Redirect().To("/")
+	})
+
 	// Serve Static Single-Page Application (SPA)
 	if s.webFS != nil {
 		s.app.Use("/", static.New("", static.Config{
 			FS:         s.webFS,
 			IndexNames: []string{"index.html"},
 			NotFoundHandler: func(c fiber.Ctx) error {
+				// If requested from a browser address bar (HTML request), fallback to SPA index.html
+				if c.Method() == fiber.MethodGet && strings.Contains(c.Get("Accept"), "text/html") {
+					indexData, err := fs.ReadFile(s.webFS, "index.html")
+					if err == nil {
+						c.Set("Content-Type", "text/html; charset=utf-8")
+						return c.Send(indexData)
+					}
+					return c.Redirect().To("/")
+				}
+
 				if strings.HasPrefix(c.Path(), "/api/") || strings.HasPrefix(c.Path(), "/ws/") {
 					return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 						"data":  nil,

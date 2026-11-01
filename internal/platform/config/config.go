@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -126,7 +127,7 @@ func LoadConfig() *Config {
 		MaxWSClients:         getInt("HSCC_MAX_WS_CLIENTS", 3, 1),
 		WatchtowerURL:        getEnv("WATCHTOWER_HTTP_URL", "http://watchtower:8080"),
 		WatchtowerToken:      getEnv("WATCHTOWER_HTTP_TOKEN", "nodepilot-secret-watchtower-token"),
-		GitHubRepo:           getEnv("GITHUB_REPOSITORY", "StephenDuc2006/NodePilot-homeserver"),
+		GitHubRepo:           getEnv("GITHUB_REPOSITORY", detectGitRepository()),
 		Version:              getEnv("HSCC_VERSION", "v1.0.0"),
 		Commit:               getEnv("HSCC_COMMIT", "ede5c8b"),
 		IdleCollectIntervalS: getInt("HSCC_IDLE_COLLECT_INTERVAL_S", 60, 0),
@@ -179,4 +180,61 @@ func getBool(key string, fallback bool) bool {
 		return fallback
 	}
 	return v
+}
+
+func parseGitRepoURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	raw = strings.TrimSuffix(raw, ".git")
+
+	// SSH format: git@github.com:OWNER/REPO
+	if strings.HasPrefix(raw, "git@github.com:") {
+		return strings.TrimPrefix(raw, "git@github.com:")
+	}
+
+	// HTTPS format: https://github.com/OWNER/REPO or http://...
+	if idx := strings.Index(raw, "github.com/"); idx != -1 {
+		return strings.TrimPrefix(raw[idx:], "github.com/")
+	}
+
+	return ""
+}
+
+func detectGitRepository() string {
+	if repo := os.Getenv("GITHUB_REPOSITORY"); repo != "" {
+		return strings.TrimSpace(repo)
+	}
+
+	// Try reading git config remote origin url via git CLI
+	cmd := exec.Command("git", "config", "--get", "remote.origin.url")
+	if out, err := cmd.Output(); err == nil {
+		if repo := parseGitRepoURL(string(out)); repo != "" {
+			return repo
+		}
+	}
+
+	// Fallback to reading .git/config directly if git binary is absent
+	if data, err := os.ReadFile(".git/config"); err == nil {
+		lines := strings.Split(string(data), "\n")
+		inRemoteOrigin := false
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "[remote \"origin\"]") {
+				inRemoteOrigin = true
+				continue
+			} else if strings.HasPrefix(trimmed, "[") {
+				inRemoteOrigin = false
+			}
+			if inRemoteOrigin && strings.HasPrefix(trimmed, "url =") {
+				raw := strings.TrimSpace(strings.TrimPrefix(trimmed, "url ="))
+				if repo := parseGitRepoURL(raw); repo != "" {
+					return repo
+				}
+			}
+		}
+	}
+
+	return "TranDucAnh3103/NodePilot"
 }
