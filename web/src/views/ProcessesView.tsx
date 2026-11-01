@@ -11,6 +11,7 @@ import {
   Terminal,
 } from 'lucide-react'
 import { spring, transition } from '../lib/motion'
+import { Pagination } from '../components/Pagination'
 import { ProcessInfo } from '../types'
 import { getProcesses } from '../lib/api'
 
@@ -21,12 +22,18 @@ export const ProcessesView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [sortBy, setSortBy] = useState<'cpu' | 'memory' | 'pid'>('cpu')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
+  const [currentPage, setCurrentPage] = useState<number>(1)
+  const pageSize = 12
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, sortBy, categoryFilter])
 
   const loadProcesses = useCallback(async () => {
     setIsLoading(true)
     setError(null)
     try {
-      const data = await getProcesses(sortBy, 100)
+      const data = await getProcesses(sortBy, 300)
       setProcesses(data)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Không thể tải danh sách tiến trình'
@@ -175,7 +182,7 @@ export const ProcessesView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
-              {filteredProcesses.map((p) => (
+              {filteredProcesses.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((p) => (
                 <tr key={p.pid} className="hover:bg-slate-800/40 transition-colors">
                   <td className="py-3 px-4 text-indigo-400 font-bold">{p.pid}</td>
                   <td className="py-3 px-4 text-slate-200 font-medium whitespace-nowrap">{p.name}</td>
@@ -203,6 +210,17 @@ export const ProcessesView: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination (12 items per page) */}
+        {filteredProcesses.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalItems={filteredProcesses.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            itemName="tiến trình"
+          />
+        )}
       </div>
     </motion.div>
   )

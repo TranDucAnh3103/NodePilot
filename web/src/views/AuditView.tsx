@@ -26,7 +26,7 @@ export const AuditView: React.FC = () => {
   const [logs, setLogs] = useState<AuditEvent[]>([])
   const [totalCount, setTotalCount] = useState<number>(0)
   const [currentPage, setCurrentPage] = useState<number>(1)
-  const [pageSize] = useState<number>(15)
+  const [pageSize] = useState<number>(12)
   const [searchTerm, setSearchTerm] = useState('')
   const [resultFilter, setResultFilter] = useState<'all' | 'success' | 'denied' | 'failed'>('all')
   const [isLoading, setIsLoading] = useState<boolean>(true)

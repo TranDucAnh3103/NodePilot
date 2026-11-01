@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"math"
+	"os"
 	"sort"
 	"strings"
 
@@ -23,13 +24,32 @@ type ProcessInfo struct {
 
 type ProcessCollector struct{}
 
+func init() {
+	// Auto-detect host proc filesystem inside containerized environments
+	if os.Getenv("HOST_PROC") == "" {
+		if _, err := os.Stat("/host/proc"); err == nil {
+			_ = os.Setenv("HOST_PROC", "/host/proc")
+		}
+	}
+	if os.Getenv("HOST_SYS") == "" {
+		if _, err := os.Stat("/host/sys"); err == nil {
+			_ = os.Setenv("HOST_SYS", "/host/sys")
+		}
+	}
+	if os.Getenv("HOST_ETC") == "" {
+		if _, err := os.Stat("/host/etc"); err == nil {
+			_ = os.Setenv("HOST_ETC", "/host/etc")
+		}
+	}
+}
+
 func NewProcessCollector() *ProcessCollector {
 	return &ProcessCollector{}
 }
 
 func (c *ProcessCollector) ListProcesses(ctx context.Context, sortBy string, limit int) ([]ProcessInfo, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 50
+	if limit <= 0 || limit > 1000 {
+		limit = 300
 	}
 
 	procs, err := gopsProc.ProcessesWithContext(ctx)

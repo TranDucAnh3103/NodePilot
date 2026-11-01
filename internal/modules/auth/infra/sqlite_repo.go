@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -10,6 +11,44 @@ import (
 	"hscc/internal/modules/auth/domain"
 	"hscc/internal/platform/sqlite"
 )
+
+var allTabs = []string{"overview", "docker", "services", "processes", "tasks", "files", "audit", "settings"}
+
+func enrichUserPermissions(u *domain.User, rawPerms string) {
+	if u.IsRoot() {
+		u.Role = domain.RoleRoot
+		u.Permissions = &domain.UserPermissions{
+			ViewTabs: allTabs,
+			EditTabs: []string{"docker", "services", "tasks", "files", "settings"},
+		}
+		return
+	}
+	if rawPerms != "" {
+		var p domain.UserPermissions
+		if err := json.Unmarshal([]byte(rawPerms), &p); err == nil && (len(p.ViewTabs) > 0 || len(p.EditTabs) > 0) {
+			u.Permissions = &p
+			return
+		}
+	}
+	// Default permissions based on role
+	if u.Role == domain.RoleOperator {
+		u.Permissions = &domain.UserPermissions{
+			ViewTabs: []string{"overview", "docker", "services", "processes", "tasks", "files", "audit"},
+			EditTabs: []string{"docker", "services", "tasks"},
+		}
+	} else if u.Role == domain.RoleAdmin {
+		u.Permissions = &domain.UserPermissions{
+			ViewTabs: allTabs,
+			EditTabs: []string{"docker", "services", "tasks", "files", "settings"},
+		}
+	} else {
+		// Viewer
+		u.Permissions = &domain.UserPermissions{
+			ViewTabs: []string{"overview", "docker", "services", "processes", "tasks", "files", "audit"},
+			EditTabs: []string{},
+		}
+	}
+}
 
 type AuthRepository struct {
 	db *sqlite.DB
@@ -29,19 +68,27 @@ func (r *AuthRepository) CountAdmins(ctx context.Context) (int, error) {
 }
 
 func (r *AuthRepository) CreateUser(ctx context.Context, u *domain.User) error {
+	_ = r.InitAuthTables(ctx)
 	query := `
-		INSERT INTO users (id, username, password_hash, role, enabled, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO users (id, username, password_hash, role, permissions, enabled, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`
 	enabledInt := 0
 	if u.Enabled {
 		enabledInt = 1
+	}
+	rawPerms := ""
+	if u.Permissions != nil {
+		if b, err := json.Marshal(u.Permissions); err == nil {
+			rawPerms = string(b)
+		}
 	}
 	_, err := r.db.ExecContext(ctx, query,
 		u.ID,
 		u.Username,
 		u.PasswordHash,
 		u.Role,
+		rawPerms,
 		enabledInt,
 		u.CreatedAt.Format(time.RFC3339),
 	)
@@ -52,14 +99,16 @@ func (r *AuthRepository) CreateUser(ctx context.Context, u *domain.User) error {
 }
 
 func (r *AuthRepository) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
-	query := `SELECT id, username, password_hash, role, enabled, created_at FROM users WHERE username = ?`
+	_ = r.InitAuthTables(ctx)
+	query := `SELECT id, username, password_hash, role, enabled, created_at, COALESCE(permissions, '') FROM users WHERE username = ?`
 	row := r.db.QueryRowContext(ctx, query, username)
 
 	var u domain.User
 	var enabledInt int
 	var createdAtStr string
+	var rawPerms string
 
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &enabledInt, &createdAtStr)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &enabledInt, &createdAtStr, &rawPerms)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrUserNotFound
@@ -69,6 +118,7 @@ func (r *AuthRepository) GetUserByUsername(ctx context.Context, username string)
 
 	u.Enabled = enabledInt == 1
 	u.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
+	enrichUserPermissions(&u, rawPerms)
 	return &u, nil
 }
 
@@ -89,14 +139,16 @@ func (r *AuthRepository) UpdatePassword(ctx context.Context, username, newHash s
 }
 
 func (r *AuthRepository) GetUserByID(ctx context.Context, id string) (*domain.User, error) {
-	query := `SELECT id, username, password_hash, role, enabled, created_at FROM users WHERE id = ?`
+	_ = r.InitAuthTables(ctx)
+	query := `SELECT id, username, password_hash, role, enabled, created_at, COALESCE(permissions, '') FROM users WHERE id = ?`
 	row := r.db.QueryRowContext(ctx, query, id)
 
 	var u domain.User
 	var enabledInt int
 	var createdAtStr string
+	var rawPerms string
 
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &enabledInt, &createdAtStr)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &enabledInt, &createdAtStr, &rawPerms)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrUserNotFound
@@ -106,6 +158,7 @@ func (r *AuthRepository) GetUserByID(ctx context.Context, id string) (*domain.Us
 
 	u.Enabled = enabledInt == 1
 	u.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
+	enrichUserPermissions(&u, rawPerms)
 	return &u, nil
 }
 
@@ -236,11 +289,14 @@ func (r *AuthRepository) InitAuthTables(ctx context.Context) error {
 		INSERT OR IGNORE INTO smtp_config (id, host, port, username, password, from_name, app_name, updated_at)
 		VALUES (1, 'smtp.gmail.com', 587, 'tranducanh31032006@gmail.com', 'obmfifcvenlomxvh', 'stephen lab', 'badminton', CURRENT_TIMESTAMP);
 	`)
+	_, _ = r.db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT ''`)
+	_, _ = r.db.ExecContext(ctx, `UPDATE users SET role = 'root' WHERE username IN ('stephen3103', 'tranducanh31032006@gmail.com')`)
 	return err
 }
 
 func (r *AuthRepository) ListUsers(ctx context.Context) ([]*domain.User, error) {
-	query := `SELECT id, username, password_hash, role, enabled, created_at FROM users ORDER BY created_at ASC`
+	_ = r.InitAuthTables(ctx)
+	query := `SELECT id, username, password_hash, role, enabled, created_at, COALESCE(permissions, '') FROM users ORDER BY created_at ASC`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query users: %w", err)
@@ -252,23 +308,45 @@ func (r *AuthRepository) ListUsers(ctx context.Context) ([]*domain.User, error) 
 		var u domain.User
 		var enabledInt int
 		var createdAtStr string
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &enabledInt, &createdAtStr); err != nil {
+		var rawPerms string
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &enabledInt, &createdAtStr, &rawPerms); err != nil {
 			return nil, err
 		}
 		u.Enabled = enabledInt == 1
 		u.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
+		enrichUserPermissions(&u, rawPerms)
 		users = append(users, &u)
 	}
 	return users, nil
 }
 
 func (r *AuthRepository) UpdateUserRole(ctx context.Context, id string, role domain.Role) error {
+	u, _ := r.GetUserByID(ctx, id)
+	if u != nil && u.IsRoot() {
+		return errors.New("không thể thay đổi quyền hạn của tài khoản ROOT hệ thống")
+	}
 	query := `UPDATE users SET role = ? WHERE id = ?`
 	_, err := r.db.ExecContext(ctx, query, string(role), id)
 	return err
 }
 
+func (r *AuthRepository) UpdateUserPermissions(ctx context.Context, id string, perms *domain.UserPermissions) error {
+	_ = r.InitAuthTables(ctx)
+	u, _ := r.GetUserByID(ctx, id)
+	if u != nil && u.IsRoot() {
+		return errors.New("không thể giới hạn quyền của tài khoản ROOT")
+	}
+	bytes, _ := json.Marshal(perms)
+	query := `UPDATE users SET permissions = ? WHERE id = ?`
+	_, err := r.db.ExecContext(ctx, query, string(bytes), id)
+	return err
+}
+
 func (r *AuthRepository) DeleteUser(ctx context.Context, id string) error {
+	u, _ := r.GetUserByID(ctx, id)
+	if u != nil && u.IsRoot() {
+		return errors.New("không thể xóa tài khoản ROOT hệ thống")
+	}
 	_, err := r.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
 	return err
 }

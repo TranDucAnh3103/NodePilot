@@ -31,6 +31,7 @@ type AuthRepo interface {
 	RotateSession(ctx context.Context, oldSessionID string, newSession *domain.Session) error
 	ListUsers(ctx context.Context) ([]*domain.User, error)
 	UpdateUserRole(ctx context.Context, id string, role domain.Role) error
+	UpdateUserPermissions(ctx context.Context, id string, perms *domain.UserPermissions) error
 	DeleteUser(ctx context.Context, id string) error
 	ListEmailAllowlist(ctx context.Context) ([]string, error)
 	AddEmailAllowlist(ctx context.Context, email string) error
@@ -113,8 +114,8 @@ func (s *AuthService) ListUsers(ctx context.Context) ([]*domain.User, error) {
 	return s.repo.ListUsers(ctx)
 }
 
-// CreateUserWithRole registers a new user with an explicit role.
-func (s *AuthService) CreateUserWithRole(ctx context.Context, username, password string, role domain.Role) (*domain.User, error) {
+// CreateUserWithRole registers a new user with an explicit role and optional custom tab permissions.
+func (s *AuthService) CreateUserWithRole(ctx context.Context, username, password string, role domain.Role, perms *domain.UserPermissions) (*domain.User, error) {
 	if len(password) < 6 {
 		return nil, domain.ErrWeakPassword
 	}
@@ -137,6 +138,7 @@ func (s *AuthService) CreateUserWithRole(ctx context.Context, username, password
 		Username:     username,
 		PasswordHash: hash,
 		Role:         role,
+		Permissions:  perms,
 		Enabled:      true,
 		CreatedAt:    time.Now().UTC(),
 	}
@@ -150,6 +152,11 @@ func (s *AuthService) CreateUserWithRole(ctx context.Context, username, password
 // UpdateUserRole updates an existing user's role.
 func (s *AuthService) UpdateUserRole(ctx context.Context, id string, role domain.Role) error {
 	return s.repo.UpdateUserRole(ctx, id, role)
+}
+
+// UpdateUserPermissions updates custom tab permissions for a non-root user.
+func (s *AuthService) UpdateUserPermissions(ctx context.Context, id string, perms *domain.UserPermissions) error {
+	return s.repo.UpdateUserPermissions(ctx, id, perms)
 }
 
 // DeleteUser removes a user and their sessions.

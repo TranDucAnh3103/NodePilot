@@ -205,7 +205,7 @@ export function App() {
       <StaleBanner isStale={isStale} />
 
       <div className="flex-1 flex overflow-hidden">
-        <Sidebar currentTab={currentTab} onTabChange={setCurrentTab} />
+        <Sidebar currentTab={currentTab} onTabChange={setCurrentTab} currentUser={currentUser} />
 
         <main className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-7xl mx-auto">

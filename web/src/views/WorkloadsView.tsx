@@ -18,6 +18,7 @@ import {
 import { spring, transition } from '../lib/motion'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { LogModal } from '../components/LogModal'
+import { Pagination } from '../components/Pagination'
 import { Container } from '../types'
 import { getContainers, getContainerLogs, executeContainerAction } from '../lib/api'
 
@@ -28,6 +29,13 @@ export const WorkloadsView: React.FC = () => {
   const [actionError, setActionError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterMode, setFilterMode] = useState<'all' | 'running' | 'allowlisted'>('all')
+  const [currentPage, setCurrentPage] = useState<number>(1)
+  const pageSize = 12
+
+  // Reset page when filter or search changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, filterMode])
 
   // Confirmation modal state
   const [activeModal, setActiveModal] = useState<{
@@ -222,7 +230,7 @@ export const WorkloadsView: React.FC = () => {
 
       {/* Workloads List */}
       <div className="space-y-3">
-        {filteredContainers.map((container) => {
+        {filteredContainers.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((container) => {
           const isRunning = container.state === 'running'
           const shortId = container.id.length > 12 ? container.id.substring(0, 12) : container.id
           const portStrings = (container.ports || []).map((p) =>
@@ -363,6 +371,17 @@ export const WorkloadsView: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Pagination (12 items per page) */}
+      {filteredContainers.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredContainers.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          itemName="containers"
+        />
+      )}
 
       {/* 2-Step Confirmation Modal */}
       {activeModal && (

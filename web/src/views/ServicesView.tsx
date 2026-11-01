@@ -16,6 +16,7 @@ import {
 import { spring, transition } from '../lib/motion'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { LogModal } from '../components/LogModal'
+import { Pagination } from '../components/Pagination'
 import { ServiceUnit } from '../types'
 import { getServices, getServiceLogs, executeServiceAction } from '../lib/api'
 
@@ -26,6 +27,12 @@ export const ServicesView: React.FC = () => {
   const [actionError, setActionError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'core_protected' | 'application' | 'system'>('all')
+  const [currentPage, setCurrentPage] = useState<number>(1)
+  const pageSize = 12
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, categoryFilter])
 
   // Confirmation modal state
   const [activeModal, setActiveModal] = useState<{
@@ -218,7 +225,7 @@ export const ServicesView: React.FC = () => {
 
       {/* Services List */}
       <div className="space-y-3">
-        {filteredServices.map((service) => {
+        {filteredServices.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((service) => {
           const isActive = service.activeState === 'active'
           const isProtected = service.isProtected || service.category === 'core_protected'
           const canMutate = service.isAllowlisted && !isProtected
@@ -341,6 +348,17 @@ export const ServicesView: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Pagination (12 items per page) */}
+      {filteredServices.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredServices.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          itemName="services"
+        />
+      )}
 
       {/* 2-Step Confirmation Modal */}
       {activeModal && (

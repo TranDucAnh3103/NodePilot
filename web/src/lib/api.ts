@@ -17,6 +17,7 @@ import {
   PowerStatus,
   MetricSeries,
   SMTPConfig,
+  UserPermissions,
 } from '../types'
 
 export const API_BASE_URL = (
@@ -388,11 +389,11 @@ export async function getAccounts(): Promise<User[]> {
   return json.data || []
 }
 
-export async function createAccount(username: string, password: string, role: string): Promise<User> {
+export async function createAccount(username: string, password: string, role: string, permissions?: UserPermissions): Promise<User> {
   const res = await fetchWithAuth('/api/v1/auth/accounts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, role }),
+    body: JSON.stringify({ username, password, role, permissions }),
   })
   const json = await res.json()
   if (!res.ok) throw new Error(json.error?.message || 'Không thể tạo tài khoản mới')
@@ -407,6 +408,16 @@ export async function updateAccountRole(id: string, role: string): Promise<void>
   })
   const json = await res.json()
   if (!res.ok) throw new Error(json.error?.message || 'Không thể cập nhật quyền tài khoản')
+}
+
+export async function updateAccountPermissions(id: string, permissions: UserPermissions): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/auth/accounts/${encodeURIComponent(id)}/permissions`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ permissions }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể cập nhật phân quyền tài khoản')
 }
 
 export async function deleteAccount(id: string): Promise<void> {

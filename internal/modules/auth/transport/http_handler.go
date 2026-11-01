@@ -77,6 +77,7 @@ func (h *AuthHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.H
 	authGroup.Get("/accounts", authMiddleware, h.ListAccounts)
 	authGroup.Post("/accounts", authMiddleware, h.CreateAccount)
 	authGroup.Put("/accounts/:id/role", authMiddleware, h.UpdateAccountRole)
+	authGroup.Put("/accounts/:id/permissions", authMiddleware, h.UpdateAccountPermissions)
 	authGroup.Delete("/accounts/:id", authMiddleware, h.DeleteAccount)
 
 	// Gmail Allowlist (Admin only)
@@ -134,9 +135,10 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 		"data": fiber.Map{
 			"accessToken": accessToken,
 			"user": fiber.Map{
-				"id":       user.ID,
-				"username": user.Username,
-				"role":     user.Role,
+				"id":          user.ID,
+				"username":    user.Username,
+				"role":        user.Role,
+				"permissions": user.Permissions,
 			},
 		},
 		"meta":  fiber.Map{"requestId": getReqID(c)},
@@ -292,9 +294,10 @@ func (h *AuthHandler) VerifyOTP(c fiber.Ctx) error {
 		"data": fiber.Map{
 			"accessToken": accessToken,
 			"user": fiber.Map{
-				"id":       user.ID,
-				"username": user.Username,
-				"role":     user.Role,
+				"id":          user.ID,
+				"username":    user.Username,
+				"role":        user.Role,
+				"permissions": user.Permissions,
 			},
 		},
 		"meta":  fiber.Map{"requestId": getReqID(c)},
@@ -323,10 +326,11 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"data": fiber.Map{
-			"id":        user.ID,
-			"username":  user.Username,
-			"role":      user.Role,
-			"createdAt": user.CreatedAt,
+			"id":          user.ID,
+			"username":    user.Username,
+			"role":        user.Role,
+			"permissions": user.Permissions,
+			"createdAt":   user.CreatedAt,
 		},
 		"meta":  fiber.Map{"requestId": getReqID(c)},
 		"error": nil,
@@ -335,10 +339,10 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 
 func (h *AuthHandler) requireAdmin(c fiber.Ctx) error {
 	role, _ := c.Locals("role").(string)
-	if role != string(domain.RoleAdmin) {
+	if role != string(domain.RoleAdmin) && role != string(domain.RoleRoot) {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"data":  nil,
-			"error": fiber.Map{"code": "FORBIDDEN", "message": "Chỉ quản trị viên (ADMIN) mới có quyền thực hiện thao tác này"},
+			"error": fiber.Map{"code": "FORBIDDEN", "message": "Chỉ quản trị viên hoặc ROOT mới có quyền thực hiện thao tác này"},
 			"meta":  fiber.Map{"requestId": getReqID(c)},
 		})
 	}
@@ -362,9 +366,10 @@ func (h *AuthHandler) ListAccounts(c fiber.Ctx) error {
 }
 
 type CreateAccountRequest struct {
-	Username string      `json:"username"`
-	Password string      `json:"password"`
-	Role     domain.Role `json:"role"`
+	Username    string                  `json:"username"`
+	Password    string                  `json:"password"`
+	Role        domain.Role             `json:"role"`
+	Permissions *domain.UserPermissions `json:"permissions,omitempty"`
 }
 
 func (h *AuthHandler) CreateAccount(c fiber.Ctx) error {
@@ -379,7 +384,7 @@ func (h *AuthHandler) CreateAccount(c fiber.Ctx) error {
 			"meta":  fiber.Map{"requestId": getReqID(c)},
 		})
 	}
-	user, err := h.authSvc.CreateUserWithRole(c.Context(), strings.TrimSpace(req.Username), req.Password, req.Role)
+	user, err := h.authSvc.CreateUserWithRole(c.Context(), strings.TrimSpace(req.Username), req.Password, req.Role, req.Permissions)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"data":  nil,
@@ -419,6 +424,44 @@ func (h *AuthHandler) UpdateAccountRole(c fiber.Ctx) error {
 		})
 	}
 	if err := h.authSvc.UpdateUserRole(c.Context(), id, req.Role); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "UPDATE_FAILED", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  fiber.Map{"success": true},
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+type UpdatePermissionsRequest struct {
+	Permissions domain.UserPermissions `json:"permissions"`
+}
+
+func (h *AuthHandler) UpdateAccountPermissions(c fiber.Ctx) error {
+	if err := h.requireAdmin(c); err != nil {
+		return err
+	}
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "ID người dùng là bắt buộc"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	var req UpdatePermissionsRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "Dữ liệu phân quyền không hợp lệ"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	if err := h.authSvc.UpdateUserPermissions(c.Context(), id, &req.Permissions); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"data":  nil,
 			"error": fiber.Map{"code": "UPDATE_FAILED", "message": err.Error()},

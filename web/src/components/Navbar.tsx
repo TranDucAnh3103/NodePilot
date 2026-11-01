@@ -79,16 +79,29 @@ export const Navbar: React.FC<NavbarProps> = ({
           </motion.button>
         )}
 
-        {user && (
-          <div className="flex items-center space-x-2 bg-slate-800/60 py-1.5 px-3 rounded-full border border-slate-700/60">
-            <UserIcon className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-xs font-medium text-slate-200">{user.username}</span>
-            <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3" />
-              {user.role}
-            </span>
-          </div>
-        )}
+        {user && (() => {
+          const isRoot =
+            user.role === 'root' ||
+            user.username === 'stephen3103' ||
+            user.username === 'tranducanh31032006@gmail.com'
+          return (
+            <div className="flex items-center space-x-2 bg-slate-800/60 py-1.5 px-3 rounded-full border border-slate-700/60">
+              <UserIcon className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-xs font-medium text-slate-200">{user.username}</span>
+              {isRoot ? (
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 font-mono">
+                  <ShieldCheck className="w-3 h-3 text-amber-400" />
+                  ROOT
+                </span>
+              ) : (
+                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 flex items-center gap-1 font-mono">
+                  <ShieldCheck className="w-3 h-3" />
+                  {user.role}
+                </span>
+              )}
+            </div>
+          )
+        })()}
 
         <motion.button
           whileTap={{ scale: 0.92 }}

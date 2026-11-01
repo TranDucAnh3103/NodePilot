@@ -1,9 +1,15 @@
-export type UserRole = 'admin' | 'operator' | 'viewer'
+export type UserRole = 'root' | 'admin' | 'operator' | 'viewer'
+
+export interface UserPermissions {
+  viewTabs: string[]
+  editTabs: string[]
+}
 
 export interface User {
   id: string
   username: string
   role: UserRole
+  permissions?: UserPermissions
   enabled?: boolean
   createdAt?: string
 }

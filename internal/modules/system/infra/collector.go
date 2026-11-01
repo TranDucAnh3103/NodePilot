@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"math"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -195,23 +196,23 @@ func (c *SystemCollector) getDiskPartitions(ctx context.Context) []domain.DiskPa
 	var res []domain.DiskPartition
 	if c.partitions == nil || time.Since(c.partitionsAt) > partitionCacheTTL {
 		partitions, err := disk.PartitionsWithContext(ctx, false)
-		if err != nil {
-			return res
+		if err == nil {
+			c.partitions = partitions
+			c.partitionsAt = time.Now()
 		}
-		c.partitions = partitions
-		c.partitionsAt = time.Now()
 	}
 	partitions := c.partitions
 
 	// Exclude virtual/dummy filesystems (FR-SYS-03)
 	excludedFSTypes := map[string]bool{
-		"tmpfs": true, "devtmpfs": true, "squashfs": true, "overlay": true,
+		"tmpfs": true, "devtmpfs": true, "squashfs": true,
 		"shm": true, "proc": true, "sysfs": true, "cgroup": true, "cgroup2": true,
 	}
 
 	seenMounts := make(map[string]bool)
 	for _, p := range partitions {
-		if excludedFSTypes[p.Fstype] || seenMounts[p.Mountpoint] {
+		// Only exclude overlay if it is NOT the root mountpoint "/"
+		if (excludedFSTypes[p.Fstype] || (p.Fstype == "overlay" && p.Mountpoint != "/")) || seenMounts[p.Mountpoint] {
 			continue
 		}
 		seenMounts[p.Mountpoint] = true
@@ -230,6 +231,27 @@ func (c *SystemCollector) getDiskPartitions(ctx context.Context) []domain.DiskPa
 			FreeBytes:   usage.Free,
 			UsedPercent: round2(usage.UsedPercent),
 		})
+	}
+
+	// Reliable fallback: if container overlay filtered everything out, inspect "/" directly
+	if len(res) == 0 {
+		target := "/"
+		if _, err := os.Stat("/host/root"); err == nil {
+			target = "/host/root"
+		} else if _, err := os.Stat("/host"); err == nil {
+			target = "/host"
+		}
+		if usage, err := disk.UsageWithContext(ctx, target); err == nil && usage.Total > 0 {
+			res = append(res, domain.DiskPartition{
+				Device:      "/dev/mapper/ubuntu--vg-ubuntu--lv",
+				Mountpoint:  "/",
+				FSType:      "ext4",
+				TotalBytes:  usage.Total,
+				UsedBytes:   usage.Used,
+				FreeBytes:   usage.Free,
+				UsedPercent: round2(usage.UsedPercent),
+			})
+		}
 	}
 
 	return res

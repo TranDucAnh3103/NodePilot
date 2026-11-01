@@ -20,6 +20,9 @@ import {
   Shield,
   Layers,
   Save,
+  Sliders,
+  CheckSquare,
+  Square as SquareIcon,
 } from 'lucide-react'
 import { spring, transition } from '../lib/motion'
 import {
@@ -28,6 +31,7 @@ import {
   getAccounts,
   createAccount,
   updateAccountRole,
+  updateAccountPermissions,
   deleteAccount,
   getEmailAllowlist,
   addEmailAllowlist,
@@ -36,11 +40,23 @@ import {
   updateSMTPConfig,
   testSMTP,
 } from '../lib/api'
-import { UpdateCheckResult, User, SMTPConfig, UserRole } from '../types'
+import { UpdateCheckResult, User, SMTPConfig, UserRole, UserPermissions } from '../types'
+import { Pagination } from '../components/Pagination'
 
 interface SettingsViewProps {
   currentUser?: User | null
 }
+
+const AVAILABLE_TABS = [
+  { id: 'overview', label: 'Tổng quan hệ thống', canEdit: false },
+  { id: 'docker', label: 'Docker Workloads', canEdit: true, editLabel: 'Start/Stop/Restart' },
+  { id: 'services', label: 'Dịch vụ Systemd', canEdit: true, editLabel: 'Restart Service' },
+  { id: 'processes', label: 'Tiến trình Host', canEdit: false },
+  { id: 'tasks', label: 'Tác vụ định sẵn', canEdit: true, editLabel: 'Thực thi tác vụ' },
+  { id: 'files', label: 'Tệp Sandbox', canEdit: true, editLabel: 'Chỉnh sửa tệp' },
+  { id: 'audit', label: 'Nhật ký kiểm toán', canEdit: false },
+  { id: 'settings', label: 'Cài đặt & Chính sách', canEdit: true, editLabel: 'Quản trị hệ thống' },
+]
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'rbac' | 'otp_smtp'>('overview')
@@ -75,13 +91,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
 
   // --- Accounts State ---
   const [accounts, setAccounts] = useState<User[]>([])
-  const [isLoadingAccounts, setIsLoadingAccounts] = useState(false)
+  const [accountsPage, setAccountsPage] = useState<number>(1)
   const [showAddUserModal, setShowAddUserModal] = useState(false)
   const [newUsername, setNewUsername] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newRole, setNewRole] = useState<UserRole>('operator')
   const [userError, setUserError] = useState<string | null>(null)
   const [userSuccess, setUserSuccess] = useState<string | null>(null)
+
+  // Granular permission modal state
+  const [editingPermsUser, setEditingPermsUser] = useState<User | null>(null)
+  const [tempViewTabs, setTempViewTabs] = useState<string[]>([])
+  const [tempEditTabs, setTempEditTabs] = useState<string[]>([])
+  const [isSavingPerms, setIsSavingPerms] = useState(false)
 
   // --- Gmail Allowlist State ---
   const [emailAllowlist, setEmailAllowlist] = useState<string[]>([])
@@ -137,14 +159,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
 
   // Load accounts
   const loadAccountsData = async () => {
-    setIsLoadingAccounts(true)
     try {
       const list = await getAccounts()
       setAccounts(list)
     } catch (err: unknown) {
       if (err instanceof Error) setUserError(err.message)
-    } finally {
-      setIsLoadingAccounts(false)
     }
   }
 
@@ -183,7 +202,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
       return
     }
     try {
-      await createAccount(newUsername.trim(), newPassword, newRole)
+      const defaultView =
+        newRole === 'admin'
+          ? ['overview', 'docker', 'services', 'processes', 'tasks', 'files', 'audit', 'settings']
+          : ['overview', 'docker', 'services', 'processes', 'tasks', 'files', 'audit']
+      const defaultEdit =
+        newRole === 'admin'
+          ? ['docker', 'services', 'tasks', 'files', 'settings']
+          : newRole === 'operator'
+          ? ['docker', 'services', 'tasks']
+          : []
+
+      await createAccount(newUsername.trim(), newPassword, newRole, {
+        viewTabs: defaultView,
+        editTabs: defaultEdit,
+      })
       setUserSuccess(`Đã tạo thành công tài khoản '${newUsername.trim()}' với quyền ${newRole.toUpperCase()}`)
       setNewUsername('')
       setNewPassword('')
@@ -202,6 +235,46 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
       loadAccountsData()
     } catch (err: unknown) {
       if (err instanceof Error) setUserError(err.message)
+    }
+  }
+
+  // Open Permission Editor
+  const handleOpenPermsModal = (user: User) => {
+    setEditingPermsUser(user)
+    setTempViewTabs(user.permissions?.viewTabs || ['overview'])
+    setTempEditTabs(user.permissions?.editTabs || [])
+  }
+
+  // Toggle View Tab
+  const toggleViewTab = (tabId: string) => {
+    setTempViewTabs((prev) =>
+      prev.includes(tabId) ? prev.filter((t) => t !== tabId) : [...prev, tabId]
+    )
+  }
+
+  // Toggle Edit Tab
+  const toggleEditTab = (tabId: string) => {
+    setTempEditTabs((prev) =>
+      prev.includes(tabId) ? prev.filter((t) => t !== tabId) : [...prev, tabId]
+    )
+  }
+
+  // Save Permissions
+  const handleSavePermissions = async () => {
+    if (!editingPermsUser) return
+    setIsSavingPerms(true)
+    try {
+      await updateAccountPermissions(editingPermsUser.id, {
+        viewTabs: tempViewTabs,
+        editTabs: tempEditTabs,
+      })
+      setUserSuccess(`Đã cập nhật phân quyền theo tab cho '${editingPermsUser.username}'`)
+      setEditingPermsUser(null)
+      loadAccountsData()
+    } catch (err: unknown) {
+      if (err instanceof Error) setUserError(err.message)
+    } finally {
+      setIsSavingPerms(false)
     }
   }
 
@@ -292,7 +365,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
             <h2 className="text-lg font-bold text-slate-100">Cài đặt & Trung tâm Quản trị</h2>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Quản lý tài khoản, ma trận phân quyền RBAC, xác thực Gmail OTP và chính sách Guardrail.
+            Quản lý tài khoản, gán quyền chi tiết theo từng Tab, xác thực Gmail OTP và chính sách bảo vệ máy chủ.
           </p>
         </div>
 
@@ -318,7 +391,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>Tài khoản & Phân quyền</span>
+            <span>Tài khoản & Phân quyền Tab</span>
           </button>
           <button
             onClick={() => setActiveTab('otp_smtp')}
@@ -339,7 +412,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
       {/* ============================================================== */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* 1. Automated Updates & Watchtower Integration Card */}
+          {/* Automated Updates & Watchtower Card */}
           <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center space-x-3">
@@ -447,7 +520,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
             </div>
           </div>
 
-          {/* 2. Guardrail Policy Cards */}
+          {/* Guardrail Policy Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Denylist Guardrail Policy Card */}
             <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 space-y-4">
@@ -504,7 +577,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
             </div>
           </div>
 
-          {/* 3. Hardware Spec Card */}
+          {/* Target Host Specification Card */}
           <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 space-y-3">
             <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
               <Cpu className="w-4 h-4 text-indigo-400" />
@@ -532,7 +605,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
       )}
 
       {/* ============================================================== */}
-      {/* TAB 2: RBAC MATRIX & ACCOUNTS MANAGEMENT                       */}
+      {/* TAB 2: RBAC MATRIX & ACCOUNTS & TAB PERMISSION ASSIGNMENT      */}
       {/* ============================================================== */}
       {activeTab === 'rbac' && (
         <div className="space-y-6">
@@ -543,7 +616,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
                 <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
                 <span>{userError}</span>
               </div>
-              <button onClick={() => setUserError(null)} className="text-rose-400 hover:text-rose-200">
+              <button onClick={() => setUserError(null)} className="text-rose-400 hover:text-rose-200 cursor-pointer">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -555,110 +628,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                 <span>{userSuccess}</span>
               </div>
-              <button onClick={() => setUserSuccess(null)} className="text-emerald-400 hover:text-emerald-200">
+              <button onClick={() => setUserSuccess(null)} className="text-emerald-400 hover:text-emerald-200 cursor-pointer">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
-
-          {/* RBAC Matrix Card */}
-          <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 space-y-4">
-            <div className="flex items-center space-x-3">
-              <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                <Layers className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-100">Ma trận Phân quyền Tài khoản (RBAC Matrix)</h3>
-                <p className="text-xs text-slate-400">
-                  Quy định quyền truy cập và giới hạn thao tác theo 3 cấp độ bảo mật nghiêm ngặt.
-                </p>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-400 font-mono text-[11px]">
-                    <th className="py-2.5 px-3">Phân hệ & Tính năng</th>
-                    <th className="py-2.5 px-3 text-center text-slate-300">
-                      <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700">VIEWER</span>
-                      <span className="block text-[10px] text-slate-500 font-sans mt-0.5">Chỉ xem</span>
-                    </th>
-                    <th className="py-2.5 px-3 text-center text-teal-300">
-                      <span className="px-2 py-0.5 rounded bg-teal-500/15 border border-teal-500/30">OPERATOR</span>
-                      <span className="block text-[10px] text-slate-500 font-sans mt-0.5">Vận hành</span>
-                    </th>
-                    <th className="py-2.5 px-3 text-center text-indigo-300">
-                      <span className="px-2 py-0.5 rounded bg-indigo-500/15 border border-indigo-500/30">ADMIN</span>
-                      <span className="block text-[10px] text-slate-500 font-sans mt-0.5">Quản trị toàn quyền</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                  <tr>
-                    <td className="py-2.5 px-3 font-medium">Giám sát Host (CPU, RAM, Đĩa, Mạng, Nhiệt độ)</td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                  </tr>
-                  <tr>
-                    <td className="py-2.5 px-3 font-medium">Process Explorer (Xem 100% tiến trình hệ thống)</td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                  </tr>
-                  <tr>
-                    <td className="py-2.5 px-3 font-medium">Docker Workloads (Xem & Logs tất cả containers)</td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                  </tr>
-                  <tr>
-                    <td className="py-2.5 px-3 font-medium">Khởi động / Dừng / Khởi động lại Container (Allowlist)</td>
-                    <td className="py-2.5 px-3 text-center"><X className="w-4 h-4 text-rose-500 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                  </tr>
-                  <tr>
-                    <td className="py-2.5 px-3 font-medium">Systemd Services (Xem trạng thái 240+ services)</td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                  </tr>
-                  <tr>
-                    <td className="py-2.5 px-3 font-medium">Thao tác Service Allowlist (Restart service cho phép)</td>
-                    <td className="py-2.5 px-3 text-center"><X className="w-4 h-4 text-rose-500 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                  </tr>
-                  <tr>
-                    <td className="py-2.5 px-3 font-medium">Tác vụ định sẵn & Sao lưu SQLite an toàn</td>
-                    <td className="py-2.5 px-3 text-center"><span className="text-[10px] text-slate-500">Chỉ xem</span></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                  </tr>
-                  <tr>
-                    <td className="py-2.5 px-3 font-medium">File Sandbox (Sửa tệp cấu hình cho phép)</td>
-                    <td className="py-2.5 px-3 text-center"><span className="text-[10px] text-slate-500">Chỉ đọc</span></td>
-                    <td className="py-2.5 px-3 text-center"><span className="text-[10px] text-slate-500">Chỉ đọc</span></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                  </tr>
-                  <tr>
-                    <td className="py-2.5 px-3 font-medium">Quản lý Tài khoản & Quyền hạn (Tạo, Sửa, Xóa user)</td>
-                    <td className="py-2.5 px-3 text-center"><X className="w-4 h-4 text-rose-500 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><X className="w-4 h-4 text-rose-500 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                  </tr>
-                  <tr>
-                    <td className="py-2.5 px-3 font-medium">Gmail OTP Allowlist & Thiết lập SMTP Server</td>
-                    <td className="py-2.5 px-3 text-center"><X className="w-4 h-4 text-rose-500 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><X className="w-4 h-4 text-rose-500 mx-auto" /></td>
-                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
 
           {/* Accounts List & Management */}
           <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 space-y-4">
@@ -668,9 +642,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
                   <Shield className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-100">Danh sách Tài khoản Hệ thống</h3>
+                  <h3 className="text-sm font-bold text-slate-100">Quản lý Tài khoản & Phân quyền Chi tiết theo Tab</h3>
                   <p className="text-xs text-slate-400">
-                    Tổng số tài khoản đã đăng ký: <span className="font-mono text-indigo-400 font-bold">{accounts.length}</span>
+                    Tài khoản <span className="font-mono text-amber-300 font-bold">stephen3103</span> và <span className="font-mono text-amber-300 font-bold">tranducanh31032006@gmail.com</span> giữ quyền cao nhất (ROOT). Các tài khoản khác có thể được tùy biến quyền xem và chỉnh sửa từng Tab.
                   </p>
                 </div>
               </div>
@@ -692,29 +666,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-500 font-mono text-[11px]">
                     <th className="py-2.5 px-3">Tài khoản</th>
-                    <th className="py-2.5 px-3">Vai trò (Role)</th>
-                    <th className="py-2.5 px-3">Ngày tạo</th>
-                    <th className="py-2.5 px-3 text-right">Thao tác</th>
+                    <th className="py-2.5 px-3">Cấp bậc (Role)</th>
+                    <th className="py-2.5 px-3">Quyền xem Tabs</th>
+                    <th className="py-2.5 px-3">Quyền chỉnh sửa Tabs</th>
+                    <th className="py-2.5 px-3 text-right">Hành động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                  {accounts.map((acc) => {
-                    const isSelf = currentUser?.id === acc.id || currentUser?.username === acc.username
-                    return (
-                      <tr key={acc.id} className="hover:bg-slate-800/30">
-                        <td className="py-3 px-3 font-medium">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-mono font-bold text-slate-100">{acc.username}</span>
-                            {isSelf && (
-                              <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded font-mono">
-                                Hiện tại
+                  {accounts
+                    .slice((accountsPage - 1) * 12, accountsPage * 12)
+                    .map((acc) => {
+                      const isRoot =
+                        acc.role === 'root' ||
+                        acc.username === 'stephen3103' ||
+                        acc.username === 'tranducanh31032006@gmail.com'
+                      const isSelf = currentUser?.id === acc.id || currentUser?.username === acc.username
+                      const viewCount = isRoot ? AVAILABLE_TABS.length : (acc.permissions?.viewTabs || []).length
+                      const editCount = isRoot ? 5 : (acc.permissions?.editTabs || []).length
+
+                      return (
+                        <tr key={acc.id} className="hover:bg-slate-800/30 transition-colors">
+                          <td className="py-3 px-3 font-medium">
+                            <div className="flex items-center space-x-2">
+                              <span className="font-mono font-bold text-slate-100">{acc.username}</span>
+                              {isSelf && (
+                                <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded font-mono">
+                                  Bạn
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3">
+                            {isRoot ? (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 w-fit">
+                                <ShieldCheck className="w-3 h-3 text-amber-400" />
+                                ROOT (Toàn quyền)
                               </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-3">
-                          <div className="flex items-center space-x-1.5">
-                            {acc.role === 'admin' ? (
+                            ) : acc.role === 'admin' ? (
                               <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
                                 ADMIN
                               </span>
@@ -727,42 +715,285 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
                                 VIEWER
                               </span>
                             )}
-
-                            {/* Role quick toggle */}
-                            {!isSelf && (
-                              <select
-                                value={acc.role}
-                                onChange={(e) => handleChangeRole(acc.id, e.target.value as UserRole)}
-                                className="bg-slate-950 border border-slate-800 text-[11px] rounded px-1.5 py-0.5 text-slate-300 font-mono focus:outline-none focus:border-indigo-500 cursor-pointer"
-                              >
-                                <option value="admin">ADMIN</option>
-                                <option value="operator">OPERATOR</option>
-                                <option value="viewer">VIEWER</option>
-                              </select>
+                          </td>
+                          <td className="py-3 px-3 font-mono text-xs">
+                            {isRoot ? (
+                              <span className="text-emerald-400 font-semibold">Tất cả {AVAILABLE_TABS.length} Tabs</span>
+                            ) : (
+                              <span className="text-slate-300">
+                                {viewCount} / {AVAILABLE_TABS.length} Tabs
+                              </span>
                             )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 text-slate-400 font-mono text-[11px]">
-                          {acc.createdAt ? new Date(acc.createdAt).toLocaleString('vi-VN') : 'Mặc định'}
-                        </td>
-                        <td className="py-3 px-3 text-right">
-                          {!isSelf && (
-                            <button
-                              onClick={() => handleDeleteUser(acc.id, acc.username)}
-                              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-                              title="Xóa tài khoản"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
+                          </td>
+                          <td className="py-3 px-3 font-mono text-xs">
+                            {isRoot ? (
+                              <span className="text-amber-300 font-semibold">Toàn quyền (5/5)</span>
+                            ) : editCount > 0 ? (
+                              <span className="text-teal-400">{editCount} Tabs</span>
+                            ) : (
+                              <span className="text-slate-500">Chỉ xem (0)</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <div className="flex items-center justify-end space-x-1.5">
+                              {!isRoot ? (
+                                <>
+                                  <motion.button
+                                    whileTap={{ scale: 0.95 }}
+                                    transition={spring.press}
+                                    onClick={() => handleOpenPermsModal(acc)}
+                                    className="px-2.5 py-1 text-xs rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 font-medium flex items-center space-x-1 cursor-pointer transition-colors"
+                                    title="Tùy biến quyền từng Tab"
+                                  >
+                                    <Sliders className="w-3 h-3" />
+                                    <span>Gán quyền Tab</span>
+                                  </motion.button>
+
+                                  {!isSelf && (
+                                    <button
+                                      onClick={() => handleDeleteUser(acc.id, acc.username)}
+                                      className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                                      title="Xóa tài khoản"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-[11px] text-slate-500 italic font-mono">Bảo vệ tối cao</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination for Accounts if > 12 */}
+            {accounts.length > 12 && (
+              <Pagination
+                currentPage={accountsPage}
+                totalItems={accounts.length}
+                pageSize={12}
+                onPageChange={setAccountsPage}
+                itemName="tài khoản"
+              />
+            )}
+          </div>
+
+          {/* RBAC Reference Matrix Card */}
+          <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                <Layers className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-100">Ma trận Phân quyền Tiêu chuẩn (RBAC Reference)</h3>
+                <p className="text-xs text-slate-400">
+                  Bảng đối chiếu quyền hạn tiêu chuẩn giữa tài khoản ROOT và các vai trò khác.
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-400 font-mono text-[11px]">
+                    <th className="py-2.5 px-3">Phân hệ & Tính năng</th>
+                    <th className="py-2.5 px-3 text-center text-slate-400">VIEWER</th>
+                    <th className="py-2.5 px-3 text-center text-teal-400">OPERATOR</th>
+                    <th className="py-2.5 px-3 text-center text-indigo-400">ADMIN</th>
+                    <th className="py-2.5 px-3 text-center text-amber-300 font-bold">ROOT (stephen3103 / Gmail)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                  <tr>
+                    <td className="py-2.5 px-3 font-medium">Giám sát Host (CPU, RAM, Đĩa, Mạng, Nhiệt độ)</td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-amber-400 mx-auto" /></td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-medium">Process Explorer (Xem 100% tiến trình hệ thống)</td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-amber-400 mx-auto" /></td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-medium">Docker Workloads (Xem & Logs 100% containers)</td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-amber-400 mx-auto" /></td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-medium">Điều khiển Container (Start/Stop/Restart Allowlist)</td>
+                    <td className="py-2.5 px-3 text-center"><X className="w-4 h-4 text-rose-500 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-amber-400 mx-auto" /></td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-medium">Dịch vụ Systemd (Quan sát 250+ services)</td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-amber-400 mx-auto" /></td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-medium">Khởi động lại Systemd Service (Chỉ Allowlist)</td>
+                    <td className="py-2.5 px-3 text-center"><X className="w-4 h-4 text-rose-500 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-amber-400 mx-auto" /></td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-medium">Quản lý Tài khoản & Phân quyền từng Tab</td>
+                    <td className="py-2.5 px-3 text-center"><X className="w-4 h-4 text-rose-500 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><X className="w-4 h-4 text-rose-500 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-amber-400 mx-auto" /></td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-medium">Gmail OTP White List & Cấu hình SMTP Gmail</td>
+                    <td className="py-2.5 px-3 text-center"><X className="w-4 h-4 text-rose-500 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><X className="w-4 h-4 text-rose-500 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-emerald-400 mx-auto" /></td>
+                    <td className="py-2.5 px-3 text-center"><Check className="w-4 h-4 text-amber-400 mx-auto" /></td>
+                  </tr>
                 </tbody>
               </table>
             </div>
           </div>
+
+          {/* Granular Tab Permissions Modal */}
+          <AnimatePresence>
+            {editingPermsUser && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-5 shadow-2xl"
+                >
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <div className="flex items-center space-x-2">
+                      <Sliders className="w-5 h-5 text-indigo-400" />
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-100">
+                          Gán Quyền Truy Cập Tab cho: <span className="font-mono text-indigo-400">{editingPermsUser.username}</span>
+                        </h3>
+                        <p className="text-[11px] text-slate-400">
+                          Tích chọn các Tab được phép Xem và các Tab được phép Chỉnh sửa/Thao tác.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setEditingPermsUser(null)}
+                      className="text-slate-400 hover:text-slate-200 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                    <div className="grid grid-cols-12 gap-2 text-[11px] font-mono text-slate-400 border-b border-slate-800 pb-2">
+                      <div className="col-span-6 font-bold uppercase">Tên Phân hệ (Tab)</div>
+                      <div className="col-span-3 text-center font-bold uppercase">Quyền Xem</div>
+                      <div className="col-span-3 text-center font-bold uppercase">Chỉnh sửa</div>
+                    </div>
+
+                    {AVAILABLE_TABS.map((tab) => {
+                      const isViewActive = tempViewTabs.includes(tab.id)
+                      const isEditActive = tempEditTabs.includes(tab.id)
+
+                      return (
+                        <div
+                          key={tab.id}
+                          className="grid grid-cols-12 gap-2 items-center p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs"
+                        >
+                          <div className="col-span-6">
+                            <span className="font-semibold text-slate-200 block">{tab.label}</span>
+                            <span className="text-[10px] text-slate-500 font-mono">id: {tab.id}</span>
+                          </div>
+
+                          <div className="col-span-3 flex justify-center">
+                            <button
+                              type="button"
+                              onClick={() => toggleViewTab(tab.id)}
+                              className={`p-1.5 rounded-lg border transition-colors cursor-pointer flex items-center space-x-1 ${
+                                isViewActive
+                                  ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300'
+                                  : 'bg-slate-900 border-slate-800 text-slate-500'
+                              }`}
+                            >
+                              {isViewActive ? (
+                                <CheckSquare className="w-4 h-4 text-indigo-400" />
+                              ) : (
+                                <SquareIcon className="w-4 h-4 text-slate-600" />
+                              )}
+                              <span className="text-[10px]">Xem</span>
+                            </button>
+                          </div>
+
+                          <div className="col-span-3 flex justify-center">
+                            {tab.canEdit ? (
+                              <button
+                                type="button"
+                                onClick={() => toggleEditTab(tab.id)}
+                                className={`p-1.5 rounded-lg border transition-colors cursor-pointer flex items-center space-x-1 ${
+                                  isEditActive
+                                    ? 'bg-teal-600/20 border-teal-500 text-teal-300'
+                                    : 'bg-slate-900 border-slate-800 text-slate-500'
+                                }`}
+                              >
+                                {isEditActive ? (
+                                  <CheckSquare className="w-4 h-4 text-teal-400" />
+                                ) : (
+                                  <SquareIcon className="w-4 h-4 text-slate-600" />
+                                )}
+                                <span className="text-[10px]">Sửa</span>
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-600 italic">Chỉ đọc</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-800 flex items-center justify-end space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingPermsUser(null)}
+                      className="px-4 py-2 rounded-xl text-slate-400 hover:bg-slate-800 text-xs cursor-pointer"
+                    >
+                      Hủy
+                    </button>
+                    <motion.button
+                      whileTap={{ scale: 0.95 }}
+                      transition={spring.press}
+                      onClick={handleSavePermissions}
+                      disabled={isSavingPerms}
+                      className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center space-x-1.5 cursor-pointer shadow-lg shadow-indigo-600/30 disabled:opacity-50"
+                    >
+                      {isSavingPerms ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5" />
+                      )}
+                      <span>Lưu quyền hạn Tab</span>
+                    </motion.button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
 
           {/* Add User Modal */}
           <AnimatePresence>
@@ -781,7 +1012,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
                     </div>
                     <button
                       onClick={() => setShowAddUserModal(false)}
-                      className="text-slate-400 hover:text-slate-200"
+                      className="text-slate-400 hover:text-slate-200 cursor-pointer"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -813,29 +1044,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
                     </div>
 
                     <div>
-                      <label className="block text-slate-400 mb-1">Vai trò & Phân quyền (Role)</label>
+                      <label className="block text-slate-400 mb-1">Cấp bậc ban đầu</label>
                       <select
                         value={newRole}
                         onChange={(e) => setNewRole(e.target.value as UserRole)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 font-mono cursor-pointer"
                       >
-                        <option value="operator">OPERATOR (Vận hành container & service)</option>
-                        <option value="viewer">VIEWER (Chỉ xem dữ liệu & logs)</option>
-                        <option value="admin">ADMIN (Quản trị toàn quyền)</option>
+                        <option value="operator">OPERATOR (Vận hành containers & services)</option>
+                        <option value="viewer">VIEWER (Chỉ xem dữ liệu)</option>
+                        <option value="admin">ADMIN (Quản trị viên)</option>
                       </select>
+                      <span className="block text-[11px] text-slate-500 mt-1">
+                        Sau khi tạo, bạn có thể bấm nút "Gán quyền Tab" để tích chọn chi tiết các tab được xem và sửa.
+                      </span>
                     </div>
 
                     <div className="pt-3 flex items-center justify-end space-x-2">
                       <button
                         type="button"
                         onClick={() => setShowAddUserModal(false)}
-                        className="px-3 py-2 rounded-xl text-slate-400 hover:bg-slate-800"
+                        className="px-3 py-2 rounded-xl text-slate-400 hover:bg-slate-800 cursor-pointer"
                       >
                         Hủy
                       </button>
                       <button
                         type="submit"
-                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold cursor-pointer"
+                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold cursor-pointer shadow-lg shadow-indigo-600/30"
                       >
                         Tạo tài khoản
                       </button>
@@ -870,7 +1104,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
                 )}
                 <span>{emailMsg.text}</span>
               </div>
-              <button onClick={() => setEmailMsg(null)}>
+              <button onClick={() => setEmailMsg(null)} className="cursor-pointer">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -892,7 +1126,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
                 )}
                 <span>{smtpFeedback.text}</span>
               </div>
-              <button onClick={() => setSmtpFeedback(null)}>
+              <button onClick={() => setSmtpFeedback(null)} className="cursor-pointer">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -919,7 +1153,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
                 required
                 value={newEmail}
                 onChange={(e) => setNewEmail(e.target.value)}
-                placeholder="Nhập Gmail mới (ví dụ: admin@gmail.com)"
+                placeholder="Nhập Gmail mới (ví dụ: tranducanh31032006@gmail.com)"
                 className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
               />
               <motion.button
@@ -935,25 +1169,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
 
             {/* Email list */}
             <div className="space-y-2 pt-2">
-              {emailAllowlist.map((email) => (
-                <div
-                  key={email}
-                  className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-between text-xs"
-                >
-                  <div className="flex items-center space-x-2.5">
-                    <Mail className="w-4 h-4 text-indigo-400" />
-                    <span className="font-mono text-slate-200 font-medium">{email}</span>
-                  </div>
-
-                  <button
-                    onClick={() => handleRemoveEmail(email)}
-                    className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors cursor-pointer"
-                    title="Xóa khỏi danh sách"
+              {emailAllowlist.map((email) => {
+                const isRootEmail = email === 'tranducanh31032006@gmail.com'
+                return (
+                  <div
+                    key={email}
+                    className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-between text-xs"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
+                    <div className="flex items-center space-x-2.5">
+                      <Mail className="w-4 h-4 text-indigo-400" />
+                      <span className="font-mono text-slate-200 font-medium">{email}</span>
+                      {isRootEmail && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          ROOT EMAIL
+                        </span>
+                      )}
+                    </div>
+
+                    {!isRootEmail && (
+                      <button
+                        onClick={() => handleRemoveEmail(email)}
+                        className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors cursor-pointer"
+                        title="Xóa khỏi danh sách"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
 

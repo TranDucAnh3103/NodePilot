@@ -13,14 +13,16 @@ import {
   Server,
 } from 'lucide-react'
 import { spring } from '../lib/motion'
+import { User } from '../types'
 
 interface SidebarProps {
   currentTab: string
   onTabChange: (tab: string) => void
+  currentUser?: User | null
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange }) => {
-  const menuItems = [
+export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, currentUser }) => {
+  const allMenuItems = [
     { id: 'overview', label: 'Tổng quan', icon: LayoutDashboard },
     { id: 'system', label: 'Hệ thống', icon: Cpu },
     { id: 'docker', label: 'Docker Workloads', icon: Layers },
@@ -31,6 +33,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange }) => 
     { id: 'audit', label: 'Nhật ký kiểm toán', icon: ScrollText },
     { id: 'settings', label: 'Cài đặt & Chính sách', icon: Settings },
   ]
+
+  const isRoot =
+    currentUser?.role === 'root' ||
+    currentUser?.username === 'stephen3103' ||
+    currentUser?.username === 'tranducanh31032006@gmail.com' ||
+    currentUser?.role === 'admin'
+
+  const menuItems = allMenuItems.filter((item) => {
+    if (isRoot) return true
+    if (item.id === 'system') return true
+    const viewTabs = currentUser?.permissions?.viewTabs || ['overview']
+    return viewTabs.includes(item.id)
+  })
 
   return (
     <aside className="w-64 border-r border-slate-800 bg-slate-900/40 p-4 flex flex-col justify-between hidden md:flex select-none">

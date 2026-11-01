@@ -22,6 +22,9 @@ services:
       - WATCHTOWER_HTTP_TOKEN=${WATCHTOWER_TOKEN:-nodepilot-watchtower-auth-token}
       - GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-TranDucAnh3103/NodePilot}
       - HSCC_VERSION=${HSCC_VERSION:-v1.0.0}
+      - HOST_PROC=/host/proc
+      - HOST_SYS=/host/sys
+      - HOST_ETC=/host/etc
     labels:
       - "com.centurylinklabs.watchtower.scope=nodepilot"
     volumes:
@@ -29,9 +32,12 @@ services:
       - ./data:/var/lib/hscc:rw
       # Read-only host Docker socket for 100% container observability
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Host root filesystem for accurate disk capacity & usage
+      - /:/host/root:ro
       # Host kernel and system stats
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
+      - /etc:/host/etc:ro
       # Systemd unit files and states on host
       - /run/systemd/units:/run/systemd/units:ro
       - /lib/systemd/system:/lib/systemd/system:ro

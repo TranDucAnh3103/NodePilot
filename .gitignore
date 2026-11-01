@@ -6,6 +6,7 @@ bin/
 *.so
 *.dylib
 /hscc-api
+/hscc-api-linux
 /hscc-helper
 /hscc-cli
 
