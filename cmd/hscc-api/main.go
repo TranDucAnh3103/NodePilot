@@ -73,6 +73,8 @@ func main() {
 	authRepo := authInfra.NewAuthRepository(db)
 	jwtMgr := security.NewJWTManager(cfg.JWTSecret, 10*time.Minute)
 	authSvc := authApp.NewAuthService(authRepo, jwtMgr)
+	// Ensure primary administrator account exists
+	_ = authSvc.EnsureDefaultAdmin(ctx, "stephen3103", "310306")
 
 	// 6. Initialize Audit Trail Module
 	auditRepo := auditInfra.NewAuditRepository(db)

@@ -14,8 +14,10 @@ var (
 	ErrSessionExpired       = errors.New("session has expired")
 	ErrSessionRevoked       = errors.New("session has been revoked")
 	ErrAdminAlreadyExists   = errors.New("initial admin has already been bootstrapped")
-	ErrWeakPassword         = errors.New("password must be at least 8 characters")
+	ErrWeakPassword         = errors.New("password must be at least 6 characters")
 	ErrTokenReuseDetected   = errors.New("refresh token reuse detected - potential hijacking")
+	ErrEmailNotAllowed      = errors.New("email address is not authorized on this homeserver")
+	ErrInvalidOTP           = errors.New("invalid or expired OTP code")
 )
 
 const (

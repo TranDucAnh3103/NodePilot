@@ -57,6 +57,38 @@ export async function login(username: string, password: string): Promise<{ acces
   return json.data
 }
 
+export async function sendOTP(email: string): Promise<{ sent: boolean; message: string; code?: string }> {
+  const res = await fetch(buildApiUrl('/api/v1/auth/otp/send'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email }),
+  })
+
+  const json = await res.json()
+  if (!res.ok) {
+    throw new Error(json.error?.message || 'Không thể gửi mã OTP')
+  }
+  return json.data
+}
+
+export async function verifyOTP(email: string, code: string): Promise<{ accessToken: string; user: User }> {
+  const res = await fetch(buildApiUrl('/api/v1/auth/otp/verify'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email, code }),
+  })
+
+  const json = await res.json()
+  if (!res.ok) {
+    throw new Error(json.error?.message || 'Mã OTP không hợp lệ')
+  }
+
+  setAccessToken(json.data.accessToken)
+  return json.data
+}
+
 export async function refreshToken(): Promise<string> {
   const res = await fetch(buildApiUrl('/api/v1/auth/refresh'), {
     method: 'POST',
@@ -321,10 +353,17 @@ export async function getProcesses(sort: string = 'cpu', limit: number = 50): Pr
 }
 
 export async function getAlerts(): Promise<{ active: Alert[]; recent: Alert[] }> {
-  const res = await fetchWithAuth('/api/v1/alerts')
-  const json = await res.json()
-  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải cảnh báo')
-  return json.data || { active: [], recent: [] }
+  try {
+    const res = await fetchWithAuth('/api/v1/alerts')
+    const json = await res.json()
+    if (!res.ok) return { active: [], recent: [] }
+    return {
+      active: (json.data && json.data.active) || [],
+      recent: (json.data && json.data.recent) || [],
+    }
+  } catch {
+    return { active: [], recent: [] }
+  }
 }
 
 export async function getPowerStatus(): Promise<PowerStatus> {

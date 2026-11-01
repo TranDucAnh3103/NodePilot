@@ -55,6 +55,7 @@ services:
     container_name: nodepilot-watchtower
     restart: unless-stopped
     environment:
+      - DOCKER_API_VERSION=1.44
       # Automatically remove old/dangling container images after update (saves disk space!)
       - WATCHTOWER_CLEANUP=true
       # Check periodically every 24 hours (86400 seconds) in background
