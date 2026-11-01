@@ -4,16 +4,21 @@ import (
 	"errors"
 
 	"github.com/gofiber/fiber/v3"
+	systemInfra "hscc/internal/modules/system/infra"
 	"hscc/internal/modules/telemetry"
 	"hscc/internal/platform/logging"
 )
 
 type SystemHandler struct {
 	telemetrySvc *telemetry.TelemetryService
+	updateSvc    *systemInfra.UpdateService
 }
 
-func NewSystemHandler(telemetrySvc *telemetry.TelemetryService) *SystemHandler {
-	return &SystemHandler{telemetrySvc: telemetrySvc}
+func NewSystemHandler(telemetrySvc *telemetry.TelemetryService, updateSvc *systemInfra.UpdateService) *SystemHandler {
+	return &SystemHandler{
+		telemetrySvc: telemetrySvc,
+		updateSvc:    updateSvc,
+	}
 }
 
 func (h *SystemHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler) {
@@ -22,6 +27,67 @@ func (h *SystemHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber
 	sysGroup.Get("/disks", h.Disks)
 	sysGroup.Get("/networks", h.Networks)
 	sysGroup.Get("/history", h.History)
+	sysGroup.Get("/version", h.Version)
+	sysGroup.Get("/update/check", h.CheckUpdate)
+	sysGroup.Post("/update/trigger", h.TriggerUpdate)
+}
+
+func (h *SystemHandler) Version(c fiber.Ctx) error {
+	v := h.updateSvc.GetVersionInfo()
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  v,
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+func (h *SystemHandler) CheckUpdate(c fiber.Ctx) error {
+	updateInfo, err := h.updateSvc.CheckUpdate(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "CHECK_UPDATE_FAILED", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  updateInfo,
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+func (h *SystemHandler) TriggerUpdate(c fiber.Ctx) error {
+	role, _ := c.Locals("role").(string)
+	if role != "admin" {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "FORBIDDEN", "message": "Only administrators can trigger system updates"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	actorID, _ := c.Locals("username").(string)
+	if actorID == "" {
+		actorID = "unknown_admin"
+	}
+
+	reqID := getReqID(c)
+	result, err := h.updateSvc.TriggerUpdate(c.Context(), actorID, reqID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "TRIGGER_UPDATE_FAILED", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": reqID},
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  result,
+		"meta":  fiber.Map{"requestId": reqID},
+		"error": nil,
+	})
 }
 
 func (h *SystemHandler) Summary(c fiber.Ctx) error {

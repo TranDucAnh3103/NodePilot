@@ -36,6 +36,20 @@ docker compose exec hscc-api hscc-cli bootstrap --username admin --role admin
 
 Truy cập hệ thống ngay tại: `http://<IP_MAY_CHU>:17880`
 
+### Cơ chế Tự động Cập nhật Không Cần Gõ Lệnh (Zero-Command Updates)
+
+Sau khi cài đặt lần đầu, bạn **hoàn toàn không cần gõ lệnh terminal nữa**:
+
+1. **Cập nhật tự động ngầm (Watchtower Daemon)**:
+   - Dịch vụ `watchtower` đi kèm sẽ định kỳ quét GitHub Container Registry (GHCR).
+   - Khi có commit mới được GitHub Actions build xong, Watchtower sẽ tự kéo image mới về và khởi động lại container nhẹ nhàng trong 3 giây.
+   - Cơ chế `WATCHTOWER_CLEANUP=true` tự động xóa sạch các image cũ để không bao giờ làm đầy ổ cứng của máy chủ.
+
+2. **Chủ động cập nhật ngay trên giao diện Web UI (1-Click Update)**:
+   - Nhấn nút **"Cập nhật"** trên thanh Navbar hoặc trong mục **"Cài đặt & Chính sách"**.
+   - Bấm **"Quét Git tìm bản mới nhất"**: Hệ thống sẽ đối soát commit đang chạy với commit mới nhất trên GitHub repository.
+   - Nếu có bản mới: Bấm **"Cập nhật ngay"**. Backend sẽ tự động phát tín hiệu tới Watchtower API (`/v1/update`) để cập nhật ngay lập tức mà không cần SSH hay terminal.
+
 ---
 
 ## 3. Khởi chạy Thủ công (Chế độ Single Binary Sản xuất)

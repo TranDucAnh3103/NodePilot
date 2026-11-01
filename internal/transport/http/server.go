@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	authApp "hscc/internal/modules/auth/app"
 	authTransport "hscc/internal/modules/auth/transport"
+	systemInfra "hscc/internal/modules/system/infra"
 	systemTransport "hscc/internal/modules/system/transport"
 	"hscc/internal/modules/telemetry"
 	"hscc/internal/platform/config"
@@ -145,7 +146,8 @@ func (s *Server) setupRoutes() {
 	authH.RegisterRoutes(api, authMiddleware)
 
 	// Register System Routes
-	sysH := systemTransport.NewSystemHandler(s.telemetrySvc)
+	updateSvc := systemInfra.NewUpdateService(s.cfg, s.db)
+	sysH := systemTransport.NewSystemHandler(s.telemetrySvc, updateSvc)
 	sysH.RegisterRoutes(api, authMiddleware)
 
 	// Register Realtime WebSocket Route

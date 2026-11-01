@@ -1,6 +1,6 @@
 import React from 'react'
 import { motion } from 'motion/react'
-import { Server, User as UserIcon, LogOut, ShieldCheck, Wifi } from 'lucide-react'
+import { Server, User as UserIcon, LogOut, ShieldCheck, Wifi, RefreshCw, ArrowUpCircle } from 'lucide-react'
 import { User } from '../types'
 import { spring } from '../lib/motion'
 
@@ -8,10 +8,21 @@ interface NavbarProps {
   user: User | null
   hostname: string
   isStale: boolean
+  hasUpdate?: boolean
+  isCheckingUpdate?: boolean
+  onOpenUpdateModal?: () => void
   onLogout: () => void
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ user, hostname, isStale, onLogout }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  user,
+  hostname,
+  isStale,
+  hasUpdate = false,
+  isCheckingUpdate = false,
+  onOpenUpdateModal,
+  onLogout,
+}) => {
   return (
     <header className="h-16 border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 flex items-center justify-between sticky top-0 z-40 select-none">
       <div className="flex items-center space-x-3.5">
@@ -42,6 +53,32 @@ export const Navbar: React.FC<NavbarProps> = ({ user, hostname, isStale, onLogou
       </div>
 
       <div className="flex items-center space-x-3">
+        {onOpenUpdateModal && (
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            transition={spring.press}
+            onClick={onOpenUpdateModal}
+            className={`flex items-center space-x-1.5 py-1.5 px-3 rounded-full text-xs font-medium cursor-pointer transition-colors border ${
+              hasUpdate
+                ? 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                : 'bg-slate-800/60 text-slate-300 border-slate-700/60 hover:bg-slate-800 hover:text-white'
+            }`}
+            title="Quét phiên bản mới từ Git"
+          >
+            {hasUpdate ? (
+              <>
+                <ArrowUpCircle className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                <span className="font-semibold">Có bản mới</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw className={`w-3.5 h-3.5 text-indigo-400 ${isCheckingUpdate ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">Cập nhật</span>
+              </>
+            )}
+          </motion.button>
+        )}
+
         {user && (
           <div className="flex items-center space-x-2 bg-slate-800/60 py-1.5 px-3 rounded-full border border-slate-700/60">
             <UserIcon className="w-3.5 h-3.5 text-slate-400" />

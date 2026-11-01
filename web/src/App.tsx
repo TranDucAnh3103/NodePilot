@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { User, HostSnapshot } from './types'
-import { getMe, refreshToken, logout } from './lib/api'
+import { User, HostSnapshot, UpdateCheckResult } from './types'
+import { getMe, refreshToken, logout, checkUpdate } from './lib/api'
 import { MetricsWebSocketClient } from './lib/ws'
 import { Navbar } from './components/Navbar'
 import { Sidebar } from './components/Sidebar'
 import { StaleBanner } from './components/StaleBanner'
+import { UpdateModal } from './components/UpdateModal'
 import { LoginView } from './views/LoginView'
 import { OverviewView } from './views/OverviewView'
 import { WorkloadsView } from './views/WorkloadsView'
@@ -20,6 +21,11 @@ export function App() {
   const [currentTab, setCurrentTab] = useState('overview')
   const [snapshot, setSnapshot] = useState<HostSnapshot | null>(null)
   const [isStale, setIsStale] = useState(false)
+
+  // Update management state
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false)
+  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null)
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
 
   // In-memory histories for ECharts (up to 60 points)
   const [cpuHistory, setCpuHistory] = useState<Array<{ time: string; value: number }>>([])
@@ -44,7 +50,26 @@ export function App() {
     initAuth()
   }, [])
 
-  // 2. Setup WebSocket when user is logged in
+  // 2. Initial update check when authenticated
+  const handleCheckUpdate = async () => {
+    setIsCheckingUpdate(true)
+    try {
+      const res = await checkUpdate()
+      setUpdateInfo(res)
+    } catch {
+      // Graceful fallback
+    } finally {
+      setIsCheckingUpdate(false)
+    }
+  }
+
+  useEffect(() => {
+    if (currentUser) {
+      handleCheckUpdate()
+    }
+  }, [currentUser])
+
+  // 3. Setup WebSocket when user is logged in
   useEffect(() => {
     if (!currentUser) {
       if (wsClientRef.current) {
@@ -126,6 +151,12 @@ export function App() {
         user={currentUser}
         hostname={snapshot?.host.hostname || 'homeserver'}
         isStale={isStale}
+        hasUpdate={updateInfo?.hasUpdate}
+        isCheckingUpdate={isCheckingUpdate}
+        onOpenUpdateModal={() => {
+          setIsUpdateModalOpen(true)
+          if (!updateInfo) handleCheckUpdate()
+        }}
         onLogout={handleLogout}
       />
 
@@ -177,6 +208,15 @@ export function App() {
           </div>
         </main>
       </div>
+
+      {/* Zero-Command Update Modal */}
+      <UpdateModal
+        isOpen={isUpdateModalOpen}
+        updateInfo={updateInfo}
+        isChecking={isCheckingUpdate}
+        onClose={() => setIsUpdateModalOpen(false)}
+        onCheckAgain={handleCheckUpdate}
+      />
     </div>
   )
 }

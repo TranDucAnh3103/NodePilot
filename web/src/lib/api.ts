@@ -1,4 +1,4 @@
-import { HostSnapshot, User } from '../types'
+import { HostSnapshot, User, UpdateCheckResult, VersionInfo, TriggerResult } from '../types'
 
 let inMemoryToken: string | null = null
 
@@ -94,4 +94,27 @@ export async function fetchWithAuth(url: string, options: RequestInit = {}): Pro
   }
 
   return res
+}
+
+export async function getVersion(): Promise<VersionInfo> {
+  const res = await fetchWithAuth('/api/v1/system/version')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể lấy thông tin phiên bản')
+  return json.data
+}
+
+export async function checkUpdate(): Promise<UpdateCheckResult> {
+  const res = await fetchWithAuth('/api/v1/system/update/check')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Kiểm tra bản cập nhật thất bại')
+  return json.data
+}
+
+export async function triggerUpdate(): Promise<TriggerResult> {
+  const res = await fetchWithAuth('/api/v1/system/update/trigger', {
+    method: 'POST',
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Kích hoạt cập nhật Watchtower thất bại')
+  return json.data
 }

@@ -14,6 +14,13 @@ services:
       - HSCC_JWT_SECRET=${HSCC_JWT_SECRET:-nodepilot-secure-random-jwt-token-key-32b}
       - HSCC_HELPER_SOCKET=/run/hscc/helper.sock
       - HSCC_LOG_LEVEL=${HSCC_LOG_LEVEL:-INFO}
+      - WATCHTOWER_HTTP_URL=http://watchtower:8080
+      - WATCHTOWER_HTTP_TOKEN=${WATCHTOWER_TOKEN:-nodepilot-watchtower-auth-token}
+      - GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-StephenDuc2006/NodePilot-homeserver}
+      - HSCC_VERSION=${HSCC_VERSION:-v1.0.0}
+      - HSCC_COMMIT=${HSCC_COMMIT:-ede5c8b}
+    labels:
+      - "com.centurylinklabs.watchtower.scope=nodepilot"
     volumes:
       # Persistent SQLite WAL database
       - ./data:/var/lib/hscc:rw
@@ -24,6 +31,8 @@ services:
       - /sys:/host/sys:ro
       # Privileged root helper IPC socket
       - /run/hscc:/run/hscc:ro
+    depends_on:
+      - watchtower
     deploy:
       resources:
         limits:
@@ -37,3 +46,37 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # ==============================================================
+  # Watchtower: Automated Zero-Touch Container Updates
+  # ==============================================================
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: nodepilot-watchtower
+    restart: unless-stopped
+    environment:
+      # Automatically remove old/dangling container images after update (saves disk space!)
+      - WATCHTOWER_CLEANUP=true
+      # Check periodically every 24 hours (86400 seconds) in background
+      - WATCHTOWER_POLL_INTERVAL=86400
+      # Enable HTTP API for on-demand UI-triggered updates
+      - WATCHTOWER_HTTP_API_UPDATE=true
+      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_TOKEN:-nodepilot-watchtower-auth-token}
+      # Restrict update scope to NodePilot containers only
+      - WATCHTOWER_SCOPE=nodepilot
+      - WATCHTOWER_INCLUDE_RESTARTING=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 35M
+        reservations:
+          cpus: "0.01"
+          memory: 15M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"

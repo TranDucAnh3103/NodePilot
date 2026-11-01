@@ -16,6 +16,11 @@ type Config struct {
 	AllowedOrigins   []string
 	CollectIntervalS int
 	MaxWSClients     int
+	WatchtowerURL    string
+	WatchtowerToken  string
+	GitHubRepo       string
+	Version          string
+	Commit           string
 }
 
 func LoadConfig() *Config {
@@ -61,6 +66,11 @@ func LoadConfig() *Config {
 		AllowedOrigins:   []string{"http://127.0.0.1:17880", "http://localhost:17880", "https://homeserver310306"},
 		CollectIntervalS: interval,
 		MaxWSClients:     maxClients,
+		WatchtowerURL:    getEnv("WATCHTOWER_HTTP_URL", "http://watchtower:8080"),
+		WatchtowerToken:  getEnv("WATCHTOWER_HTTP_TOKEN", "nodepilot-secret-watchtower-token"),
+		GitHubRepo:       getEnv("GITHUB_REPOSITORY", "StephenDuc2006/NodePilot-homeserver"),
+		Version:          getEnv("HSCC_VERSION", "v1.0.0"),
+		Commit:           getEnv("HSCC_COMMIT", "ede5c8b"),
 	}
 }
 

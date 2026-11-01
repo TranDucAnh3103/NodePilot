@@ -70,3 +70,31 @@ export interface HostSnapshot {
   temperature: TemperatureInfo
   stale?: boolean
 }
+
+export interface VersionInfo {
+  currentVersion: string
+  currentCommit: string
+  repository: string
+  goVersion: string
+  buildTime: string
+}
+
+export interface UpdateCheckResult {
+  hasUpdate: boolean
+  currentVersion: string
+  currentCommit: string
+  latestVersion: string
+  latestCommit: string
+  commitMessage: string
+  author: string
+  publishedAt: string
+  releaseNotes?: string
+  repository: string
+  updateMethod: string
+}
+
+export interface TriggerResult {
+  status: string
+  message: string
+  triggeredAt: string
+}
