@@ -25,15 +25,17 @@ import {
   Wifi,
   ExternalLink,
 } from 'lucide-react'
-import { HostSnapshot } from '../types'
+import { HostSnapshot, User } from '../types'
 import { CpuChart } from '../components/CpuChart'
 import { NetworkChart } from '../components/NetworkChart'
 import { spring, transition } from '../lib/motion'
+import { isUserRoot, canUserViewTab } from '../lib/permissions'
 
 interface OverviewViewProps {
   snapshot: HostSnapshot | null
   cpuHistory: Array<{ time: string; value: number }>
   netHistory: Array<{ time: string; rxKB: number; txKB: number }>
+  currentUser?: User | null
   onNavigate?: (tab: string) => void
 }
 
@@ -41,6 +43,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   snapshot,
   cpuHistory,
   netHistory,
+  currentUser,
   onNavigate,
 }) => {
   const [copiedIp, setCopiedIp] = useState(false)
@@ -94,7 +97,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   const totalRxBytes = networks.reduce((acc, n) => acc + (n.rxBytesPerSec || 0), 0)
   const totalTxBytes = networks.reduce((acc, n) => acc + (n.txBytesPerSec || 0), 0)
 
-  // Tools list inspired by DirectAdmin & ZHOST
+  // Tools list inspired by DirectAdmin & ZHOST (Strictly guarded by RBAC permissions)
   const tools = [
     {
       id: 'terminal',
@@ -103,6 +106,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       icon: Terminal,
       color: 'indigo',
       badge: 'Root Shell',
+      rootOnly: true,
     },
     {
       id: 'files',
@@ -111,6 +115,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       icon: FolderOpen,
       color: 'amber',
       badge: 'Full VPS',
+      rootOnly: false,
     },
     {
       id: 'firewall',
@@ -119,6 +124,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       icon: Shield,
       color: 'emerald',
       badge: 'Chặn cổng',
+      rootOnly: true,
     },
     {
       id: 'nginx',
@@ -127,6 +133,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       icon: Globe,
       color: 'teal',
       badge: 'Web Proxy',
+      rootOnly: true,
     },
     {
       id: 'docker',
@@ -135,6 +142,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       icon: Layers,
       color: 'blue',
       badge: 'Containers',
+      rootOnly: false,
     },
     {
       id: 'services',
@@ -143,6 +151,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       icon: Activity,
       color: 'purple',
       badge: 'Daemons',
+      rootOnly: false,
     },
     {
       id: 'processes',
@@ -151,6 +160,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       icon: ListOrdered,
       color: 'rose',
       badge: 'Top CPU',
+      rootOnly: false,
     },
     {
       id: 'settings',
@@ -159,8 +169,16 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       icon: Settings,
       color: 'slate',
       badge: 'Gmail OTP',
+      rootOnly: true,
     },
   ]
+
+  // Filter tools so viewers only see tabs they are explicitly permitted to view.
+  // Settings, Terminal, Firewall, Nginx are strictly hidden from non-root viewers.
+  const visibleTools = tools.filter((tool) => {
+    if (tool.rootOnly && !isUserRoot(currentUser)) return false
+    return canUserViewTab(currentUser, tool.id)
+  })
 
   return (
     <motion.div
@@ -359,8 +377,9 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           <span className="text-[11px] text-slate-500">Bấm vào thẻ để chuyển trang điều khiển</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-          {tools.map((tool) => {
+        {visibleTools.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {visibleTools.map((tool) => {
             const Icon = tool.icon
             return (
               <motion.button
@@ -395,7 +414,12 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               </motion.button>
             )
           })}
-        </div>
+          </div>
+        ) : (
+          <div className="p-6 bg-slate-900/40 border border-slate-800 rounded-2xl text-center text-xs text-slate-400">
+            Không có công cụ điều khiển khả dụng cho quyền tài khoản hiện tại.
+          </div>
+        )}
       </div>
 
       {/* 4. Live Charts Grid */}

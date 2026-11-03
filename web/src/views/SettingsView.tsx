@@ -42,6 +42,7 @@ import {
 } from '../lib/api'
 import { UpdateCheckResult, User, SMTPConfig, UserRole, UserPermissions } from '../types'
 import { Pagination } from '../components/Pagination'
+import { isUserRoot } from '../lib/permissions'
 
 interface SettingsViewProps {
   currentUser?: User | null
@@ -58,10 +59,23 @@ const AVAILABLE_TABS = [
   { id: 'processes', label: 'Tiến trình Host', canEdit: false },
   { id: 'tasks', label: 'Tác vụ định sẵn', canEdit: true, editLabel: 'Thực thi tác vụ' },
   { id: 'audit', label: 'Nhật ký kiểm toán', canEdit: false },
-  { id: 'settings', label: 'Cài đặt & Chính sách', canEdit: true, editLabel: 'Quản trị hệ thống' },
 ]
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
+  // Guard: Settings tab is strictly reserved for Root
+  if (!isUserRoot(currentUser)) {
+    return (
+      <div className="p-8 text-center bg-slate-900/60 border border-slate-800 rounded-2xl max-w-lg mx-auto mt-12">
+        <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-4">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h3 className="text-base font-bold text-white">Không có quyền truy cập</h3>
+        <p className="text-sm text-slate-400 mt-2">
+          Mục Phân quyền & Cài đặt hệ thống chỉ dành riêng cho tài khoản có quyền ROOT. Tài khoản của bạn không được phép xem hoặc chỉnh sửa tại đây.
+        </p>
+      </div>
+    )
+  }
   const [activeTab, setActiveTab] = useState<'overview' | 'rbac' | 'otp_smtp'>('overview')
 
   // --- Guardrail Data ---
@@ -190,10 +204,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
   }
 
   useEffect(() => {
-    handleCheckUpdate()
-    loadAccountsData()
-    loadOtpSmtpData()
-  }, [])
+    if (isUserRoot(currentUser)) {
+      handleCheckUpdate()
+      loadAccountsData()
+      loadOtpSmtpData()
+    }
+  }, [currentUser])
 
   // Create User
   const handleCreateUser = async (e: React.FormEvent) => {
