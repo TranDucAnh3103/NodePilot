@@ -52,15 +52,15 @@ func (s *OTPService) GetConfig(ctx context.Context) OTPConfig {
 	cfg := OTPConfig{
 		SMTPHost: "smtp.gmail.com",
 		SMTPPort: 587,
-		SMTPUser: "tranducanh31032006@gmail.com",
-		SMTPPass: "obmfifcvenlomxvh",
-		FromName: "stephen lab",
-		AppName:  "badminton",
+		SMTPUser: "piganh408@gmail.com",
+		SMTPPass: "agkdvggtiijyfmhb",
+		FromName: "ELMS-Ekila-Academy",
+		AppName:  "NodePilot HSCC",
 	}
 
 	if s.authSvc != nil && s.authSvc.repo != nil {
 		c, err := s.authSvc.repo.GetSMTPConfig(ctx)
-		if err == nil && c != nil && c.Host != "" {
+		if err == nil && c != nil && c.Host != "" && c.Username != "stevejohn0174@gmail.com" {
 			cfg.SMTPHost = c.Host
 			cfg.SMTPPort = c.Port
 			cfg.SMTPUser = c.Username
@@ -98,6 +98,18 @@ func (s *OTPService) IsEmailAllowed(ctx context.Context, email string) bool {
 		return false
 	}
 
+	// Always allow designated system admins
+	if email == "piganh408@gmail.com" || email == "tranducanh31032006@gmail.com" {
+		return true
+	}
+
+	// Check if this email corresponds to a registered user
+	if s.authSvc != nil && s.authSvc.repo != nil {
+		if u, err := s.authSvc.repo.GetUserByUsername(ctx, email); err == nil && u != nil && u.Enabled {
+			return true
+		}
+	}
+
 	// Check DB allowlist if available
 	if s.authSvc != nil && s.authSvc.repo != nil {
 		emails, err := s.authSvc.repo.ListEmailAllowlist(ctx)
@@ -108,11 +120,6 @@ func (s *OTPService) IsEmailAllowed(ctx context.Context, email string) bool {
 				}
 			}
 		}
-	}
-
-	// Hardcoded fallback allowlist
-	if email == "tranducanh31032006@gmail.com" {
-		return true
 	}
 
 	// Environment fallback
@@ -411,20 +418,30 @@ func (s *OTPService) VerifyOTP(ctx context.Context, email, code string) (string,
 	delete(s.otps, email)
 	s.mu.Unlock()
 
-	// Authenticate user: prefer "stephen3103"
-	adminUser, err := s.authSvc.repo.GetUserByUsername(ctx, "stephen3103")
-	if err != nil || adminUser == nil {
-		adminUser, _ = s.authSvc.repo.GetUserByUsername(ctx, "admin")
+	// Authenticate target user
+	var targetUser *domain.User
+	// 1. Check if user with username == email exists
+	if u, err := s.authSvc.repo.GetUserByUsername(ctx, email); err == nil && u != nil && u.Enabled {
+		targetUser = u
+	} else {
+		// Prefer root/admin users for admin emails
+		targetUser, _ = s.authSvc.repo.GetUserByUsername(ctx, "root")
+		if targetUser == nil {
+			targetUser, _ = s.authSvc.repo.GetUserByUsername(ctx, "stephen3103")
+		}
+		if targetUser == nil {
+			targetUser, _ = s.authSvc.repo.GetUserByUsername(ctx, "admin")
+		}
 	}
 
-	if adminUser == nil {
+	if targetUser == nil {
 		return "", "", nil, errors.New("tài khoản hệ thống chưa sẵn sàng")
 	}
 
-	accessToken, refreshToken, err := s.authSvc.IssueTokensForUser(ctx, adminUser)
+	accessToken, refreshToken, err := s.authSvc.IssueTokensForUser(ctx, targetUser)
 	if err != nil {
 		return "", "", nil, err
 	}
 
-	return accessToken, refreshToken, adminUser, nil
+	return accessToken, refreshToken, targetUser, nil
 }

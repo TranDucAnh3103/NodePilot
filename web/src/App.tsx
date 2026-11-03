@@ -17,6 +17,9 @@ import { FilesView } from './views/FilesView'
 import { ProcessesView } from './views/ProcessesView'
 import { AuditView } from './views/AuditView'
 import { SettingsView } from './views/SettingsView'
+import { TerminalView } from './views/TerminalView'
+import { FirewallView } from './views/FirewallView'
+import { NginxView } from './views/NginxView'
 import { transition } from './lib/motion'
 
 export function App() {
@@ -231,6 +234,7 @@ export function App() {
                     snapshot={snapshot}
                     cpuHistory={cpuHistory}
                     netHistory={netHistory}
+                    onNavigate={(tab) => setCurrentTab(tab)}
                   />
                 )}
                 {currentTab === 'system' && (
@@ -238,8 +242,12 @@ export function App() {
                     snapshot={snapshot}
                     cpuHistory={cpuHistory}
                     netHistory={netHistory}
+                    onNavigate={(tab) => setCurrentTab(tab)}
                   />
                 )}
+                {currentTab === 'terminal' && <TerminalView />}
+                {currentTab === 'firewall' && <FirewallView />}
+                {currentTab === 'nginx' && <NginxView />}
                 {currentTab === 'docker' && <WorkloadsView />}
                 {currentTab === 'services' && <ServicesView />}
                 {currentTab === 'processes' && <ProcessesView />}

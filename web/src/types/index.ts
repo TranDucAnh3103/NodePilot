@@ -1,8 +1,9 @@
-export type UserRole = 'root' | 'admin' | 'operator' | 'viewer'
+export type UserRole = 'root' | 'admin' | 'user' | 'operator' | 'viewer' | 'view'
 
 export interface UserPermissions {
   viewTabs: string[]
   editTabs: string[]
+  allowedPaths?: string[]
 }
 
 export interface User {
@@ -206,21 +207,85 @@ export interface TaskExecution {
   errorMessage?: string
 }
 
+export interface Bookmark {
+  name: string
+  path: string
+  icon: string
+}
+
 export interface FileItem {
   name: string
   relPath: string
   isDir: boolean
   size: number
   modTime: string
+  mode?: string
+  owner?: string
+  extension?: string
 }
 
 export interface FileContent {
+  name?: string
   relPath: string
   content: string
   sha256: string
   size: number
+  modTime?: string
+  isEditable?: boolean
+}
+
+export interface FirewallRule {
+  number: number
+  to: string
+  action: string
+  from: string
+  proto?: string
+  protocol?: string
+  comment?: string
+}
+
+export interface FirewallStatus {
+  active: boolean
+  defaultIn?: string
+  defaultOut?: string
+  defaultIncoming?: string
+  defaultOutgoing?: string
+  defaultRouted?: string
+  rules: FirewallRule[]
+  rawOutput?: string
+}
+
+export interface NginxSite {
+  name: string
+  enabled: boolean
   modTime: string
-  isEditable: boolean
+  size: number
+  serverName?: string
+  listenPort?: string
+}
+
+export interface NginxStatus {
+  installed: boolean
+  active: boolean
+  version: string
+  sites: NginxSite[]
+}
+
+export interface TailscalePeer {
+  ip: string
+  hostname: string
+  user: string
+  os: string
+  status: string
+}
+
+export interface TailscaleInfo {
+  connected: boolean
+  ip: string
+  hostname: string
+  peers: TailscalePeer[]
+  activePeers: number
+  rawStatus?: string
 }
 
 export interface ProcessInfo {

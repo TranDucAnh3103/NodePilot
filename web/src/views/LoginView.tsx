@@ -31,7 +31,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [password, setPassword] = useState('')
 
   // Gmail OTP Login state
-  const [email, setEmail] = useState('tranducanh31032006@gmail.com')
+  const [email, setEmail] = useState('piganh408@gmail.com')
   const [otpCode, setOtpCode] = useState('')
   const [isOtpSent, setIsOtpSent] = useState(false)
   const [countdown, setCountdown] = useState(0)

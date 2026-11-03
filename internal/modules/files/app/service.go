@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -16,108 +18,156 @@ import (
 	"hscc/internal/modules/files/domain"
 )
 
-const MaxFileSize = 1024 * 1024 // 1 MiB
+const MaxFileSize = 2 * 1024 * 1024 // 2 MiB for web editor
 
 type FileService struct {
-	rootDir  string
-	auditSvc *auditApp.AuditService
+	defaultRoot string
+	auditSvc    *auditApp.AuditService
 }
 
-func NewFileService(rootDir string, auditSvc *auditApp.AuditService) *FileService {
-	// Parse rootDir if in name=path format
-	if idx := strings.Index(rootDir, "="); idx != -1 {
-		rootDir = rootDir[idx+1:]
+func NewFileService(defaultRoot string, auditSvc *auditApp.AuditService) *FileService {
+	// Parse defaultRoot if in name=path format
+	if idx := strings.Index(defaultRoot, "="); idx != -1 {
+		defaultRoot = defaultRoot[idx+1:]
 	}
-	abs, err := filepath.Abs(rootDir)
+	abs, err := filepath.Abs(defaultRoot)
 	if err == nil {
-		rootDir = abs
+		defaultRoot = abs
 	}
-	_ = os.MkdirAll(rootDir, 0750)
+	_ = os.MkdirAll(defaultRoot, 0750)
 
 	return &FileService{
-		rootDir:  rootDir,
-		auditSvc: auditSvc,
+		defaultRoot: defaultRoot,
+		auditSvc:    auditSvc,
 	}
 }
 
-// sanitizePath ensures no path traversal outside rootDir and blocks sensitive folders (BUG-3.1, AT-10).
-func (s *FileService) sanitizePath(rel string) (string, error) {
-	rel = filepath.Clean(rel)
-	if rel == "." || rel == "/" || rel == "\\" {
-		return s.rootDir, nil
-	}
-
-	// Reject explicit traversal patterns
-	if strings.HasPrefix(rel, "..") || strings.Contains(rel, "../") || strings.Contains(rel, "..\\") {
-		return "", domain.ErrPathTraversal
-	}
-
-	target := filepath.Join(s.rootDir, rel)
-	cleanTarget := filepath.Clean(target)
-
-	// If target exists, evaluate symlinks to block TOCTOU symlink breakouts
-	if fi, err := os.Lstat(cleanTarget); err == nil {
-		if fi.Mode()&os.ModeSymlink != 0 {
-			resolved, err := filepath.EvalSymlinks(cleanTarget)
-			if err != nil {
-				return "", domain.ErrPathTraversal
-			}
-			cleanTarget = resolved
+// GetBookmarks returns quick bookmarks for navigation
+func (s *FileService) GetBookmarks(isRoot bool) []domain.Bookmark {
+	if runtime.GOOS == "windows" {
+		return []domain.Bookmark{
+			{Name: "Project Root", Path: ".", Icon: "folder"},
+			{Name: "Data Directory", Path: "./data", Icon: "database"},
+			{Name: "Web Source", Path: "./web", Icon: "code"},
 		}
 	}
 
-	// Verify prefix matches rootDir
-	cleanRoot := filepath.Clean(s.rootDir)
-	if !strings.HasPrefix(cleanTarget, cleanRoot) {
-		return "", domain.ErrPathTraversal
+	bookmarks := []domain.Bookmark{
+		{Name: "Stephen Home", Path: "/home/stephen", Icon: "home"},
+		{Name: "NodePilot HSCC", Path: "/home/stephen/nodepilot", Icon: "cpu"},
+		{Name: "Nginx Configs", Path: "/etc/nginx", Icon: "globe"},
+		{Name: "Web Root (/var/www)", Path: "/var/www", Icon: "server"},
+		{Name: "System Logs", Path: "/var/log", Icon: "scroll"},
+		{Name: "Root (/)", Path: "/", Icon: "shield"},
 	}
 
-	// Check sensitive blacklisted paths
-	lower := strings.ToLower(filepath.ToSlash(cleanTarget))
-	blacklists := []string{"/etc/shadow", "/etc/passwd", "/root", "/.ssh", "/proc", "/sys", "/dev"}
+	if !isRoot {
+		return []domain.Bookmark{
+			{Name: "Stephen Home", Path: "/home/stephen", Icon: "home"},
+			{Name: "NodePilot HSCC", Path: "/home/stephen/nodepilot", Icon: "cpu"},
+		}
+	}
+
+	return bookmarks
+}
+
+// resolvePath validates and normalizes the target path based on user permissions
+func (s *FileService) resolvePath(rawPath string, isRoot bool, allowedPaths []string) (string, error) {
+	rawPath = strings.TrimSpace(rawPath)
+	if rawPath == "" || rawPath == "." {
+		if isRoot {
+			if runtime.GOOS == "windows" {
+				return filepath.Abs(".")
+			}
+			if _, err := os.Stat("/home/stephen"); err == nil {
+				return "/home/stephen", nil
+			}
+			return "/", nil
+		}
+		return s.defaultRoot, nil
+	}
+
+	var target string
+	if filepath.IsAbs(rawPath) {
+		target = filepath.Clean(rawPath)
+	} else {
+		base := s.defaultRoot
+		if isRoot {
+			if runtime.GOOS != "windows" && strings.HasPrefix(rawPath, "home") {
+				base = "/"
+			} else {
+				base, _ = filepath.Abs(".")
+			}
+		}
+		target = filepath.Clean(filepath.Join(base, rawPath))
+	}
+
+	// Always block critical credential leaks
+	lower := strings.ToLower(filepath.ToSlash(target))
+	blacklists := []string{"/etc/shadow", "/etc/gshadow", "/.ssh/id_rsa", "/.ssh/id_ed25519"}
 	for _, b := range blacklists {
-		if strings.Contains(lower, b) {
+		if strings.HasSuffix(lower, b) {
 			return "", domain.ErrPathBlacklisted
 		}
 	}
 
-	return cleanTarget, nil
+	// If root, unrestricted
+	if isRoot {
+		return target, nil
+	}
+
+	// For regular users, verify target is inside one of their allowedPaths or defaultRoot
+	checkPaths := append([]string{s.defaultRoot}, allowedPaths...)
+	allowed := false
+	for _, p := range checkPaths {
+		cleanP := filepath.Clean(p)
+		if strings.HasPrefix(target, cleanP) {
+			allowed = true
+			break
+		}
+	}
+
+	if !allowed {
+		return "", domain.ErrPathTraversal
+	}
+
+	return target, nil
 }
 
-func (s *FileService) ListDirectory(ctx context.Context, relPath string) ([]domain.FileItem, error) {
-	target, err := s.sanitizePath(relPath)
+func (s *FileService) ListDirectory(ctx context.Context, rawPath string, isRoot bool, allowedPaths []string) ([]domain.FileItem, string, error) {
+	target, err := s.resolvePath(rawPath, isRoot, allowedPaths)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	entries, err := os.ReadDir(target)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, domain.ErrFileNotFound
+			return nil, target, domain.ErrFileNotFound
 		}
-		return nil, err
+		return nil, target, err
 	}
 
 	var items []domain.FileItem
 	for _, entry := range entries {
 		name := entry.Name()
-		// Hide internal backup files and temp files
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
 
-		itemRel := filepath.ToSlash(filepath.Join(relPath, name))
+		itemRel := filepath.ToSlash(filepath.Join(target, name))
+		modeStr := info.Mode().String()
+		ext := strings.TrimPrefix(filepath.Ext(name), ".")
+
 		items = append(items, domain.FileItem{
-			Name:    name,
-			RelPath: itemRel,
-			IsDir:   entry.IsDir(),
-			Size:    info.Size(),
-			ModTime: info.ModTime().UTC(),
+			Name:      name,
+			RelPath:   itemRel,
+			IsDir:     entry.IsDir(),
+			Size:      info.Size(),
+			ModTime:   info.ModTime().UTC(),
+			Mode:      modeStr,
+			Extension: ext,
 		})
 	}
 
@@ -125,14 +175,14 @@ func (s *FileService) ListDirectory(ctx context.Context, relPath string) ([]doma
 		if items[i].IsDir != items[j].IsDir {
 			return items[i].IsDir // Directories first
 		}
-		return items[i].Name < items[j].Name
+		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
 	})
 
-	return items, nil
+	return items, filepath.ToSlash(target), nil
 }
 
-func (s *FileService) ReadFile(ctx context.Context, relPath string) (*domain.FileContent, error) {
-	target, err := s.sanitizePath(relPath)
+func (s *FileService) ReadFile(ctx context.Context, rawPath string, isRoot bool, allowedPaths []string) (*domain.FileContent, error) {
+	target, err := s.resolvePath(rawPath, isRoot, allowedPaths)
 	if err != nil {
 		return nil, err
 	}
@@ -153,112 +203,193 @@ func (s *FileService) ReadFile(ctx context.Context, relPath string) (*domain.Fil
 		return nil, domain.ErrFileTooLarge
 	}
 
-	data, err := os.ReadFile(target)
+	f, err := os.Open(target)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	hasher := sha256.New()
+	contentBytes, err := io.ReadAll(io.TeeReader(f, hasher))
 	if err != nil {
 		return nil, err
 	}
 
-	hasher := sha256.New()
-	hasher.Write(data)
-	hashHex := hex.EncodeToString(hasher.Sum(nil))
+	isEditable := isTextFile(contentBytes)
+	displayContent := ""
+	if isEditable {
+		displayContent = string(contentBytes)
+	}
 
 	return &domain.FileContent{
-		RelPath:    filepath.ToSlash(relPath),
-		Content:    string(data),
-		SHA256:     hashHex,
+		RelPath:    filepath.ToSlash(target),
+		Content:    displayContent,
+		SHA256:     hex.EncodeToString(hasher.Sum(nil)),
 		Size:       info.Size(),
 		ModTime:    info.ModTime().UTC(),
-		IsEditable: true,
+		IsEditable: isEditable,
 	}, nil
 }
 
-// WriteFile performs atomic save via temp file, creates backup, and verifies optimistic locking (BUG-3.5, FR-FILE-03).
-func (s *FileService) WriteFile(ctx context.Context, actorID, actorUsername string, req domain.SaveFileRequest, ip, requestID string) (*domain.FileContent, error) {
-	target, err := s.sanitizePath(req.RelPath)
+func (s *FileService) SaveFile(ctx context.Context, rawPath, content, expectedSHA string, isRoot bool, allowedPaths []string, actorID, actorUsername string) (*domain.FileContent, error) {
+	target, err := s.resolvePath(rawPath, isRoot, allowedPaths)
 	if err != nil {
 		return nil, err
 	}
 
-	// Verify optimistic lock if expected SHA256 was provided
-	if info, err := os.Stat(target); err == nil {
+	info, err := os.Stat(target)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	if err == nil {
 		if info.IsDir() {
 			return nil, domain.ErrIsDirectory
 		}
-
-		if req.ExpectedSHA256 != "" {
-			currentData, err := os.ReadFile(target)
+		// Conflict detection
+		if expectedSHA != "" {
+			existingBytes, err := os.ReadFile(target)
 			if err == nil {
-				hasher := sha256.New()
-				hasher.Write(currentData)
-				currentHash := hex.EncodeToString(hasher.Sum(nil))
-				if currentHash != req.ExpectedSHA256 {
+				curHash := sha256.Sum256(existingBytes)
+				if hex.EncodeToString(curHash[:]) != expectedSHA {
 					return nil, domain.ErrVersionConflict
 				}
 			}
 		}
-
-		// Create auto-backup before overwrite
-		dir := filepath.Dir(target)
-		base := filepath.Base(target)
-		bakPath := filepath.Join(dir, fmt.Sprintf(".%s.bak_%d", base, time.Now().Unix()))
-		_ = copyFile(target, bakPath)
 	}
 
-	// Atomic write: write to temp file, sync, then rename
+	// Atomic write via temp file in same directory
 	dir := filepath.Dir(target)
-	base := filepath.Base(target)
-	tmpPath := filepath.Join(dir, fmt.Sprintf(".%s.tmp_%d", base, time.Now().UnixNano()))
+	_ = os.MkdirAll(dir, 0755)
 
-	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0640)
+	tmpFile, err := os.CreateTemp(dir, ".hscc_tmp_*")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary file: %w", err)
+		// Fallback to direct write
+		if errWrite := os.WriteFile(target, []byte(content), 0644); errWrite != nil {
+			return nil, fmt.Errorf("failed to write file: %w", errWrite)
+		}
+	} else {
+		tmpName := tmpFile.Name()
+		_, errWrite := tmpFile.Write([]byte(content))
+		_ = tmpFile.Close()
+		if errWrite != nil {
+			_ = os.Remove(tmpName)
+			return nil, errWrite
+		}
+		if errRename := os.Rename(tmpName, target); errRename != nil {
+			_ = os.Remove(tmpName)
+			_ = os.WriteFile(target, []byte(content), 0644)
+		}
 	}
 
-	if _, err := tmpFile.WriteString(req.Content); err != nil {
-		tmpFile.Close()
-		_ = os.Remove(tmpPath)
-		return nil, fmt.Errorf("failed to write content: %w", err)
+	hash := sha256.Sum256([]byte(content))
+	shaStr := hex.EncodeToString(hash[:])
+
+	if s.auditSvc != nil {
+		_ = s.auditSvc.Log(ctx, actorID, actorUsername, "file_save", "file", target, "SUCCESS", "", "", "")
 	}
 
-	if err := tmpFile.Sync(); err != nil {
-		tmpFile.Close()
-		_ = os.Remove(tmpPath)
-		return nil, fmt.Errorf("failed to sync file: %w", err)
-	}
-	tmpFile.Close()
+	return &domain.FileContent{
+		RelPath:    filepath.ToSlash(target),
+		Content:    content,
+		SHA256:     shaStr,
+		Size:       int64(len(content)),
+		ModTime:    time.Now().UTC(),
+		IsEditable: true,
+	}, nil
+}
 
-	if err := os.Rename(tmpPath, target); err != nil {
-		_ = os.Remove(tmpPath)
-		return nil, fmt.Errorf("failed to atomic rename file: %w", err)
-	}
-
-	// Re-read saved content
-	content, err := s.ReadFile(ctx, req.RelPath)
+func (s *FileService) CreateFolder(ctx context.Context, rawPath string, isRoot bool, allowedPaths []string, actorID, actorUsername string) error {
+	target, err := s.resolvePath(rawPath, isRoot, allowedPaths)
 	if err != nil {
-		return nil, err
+		return err
+	}
+
+	if err := os.MkdirAll(target, 0755); err != nil {
+		return fmt.Errorf("không thể tạo thư mục: %w", err)
 	}
 
 	if s.auditSvc != nil {
-		_ = s.auditSvc.Log(ctx, actorID, actorUsername, "FILE_WRITE", "sandbox_file", req.RelPath, "success", requestID, ip,
-			fmt.Sprintf(`{"size":%d,"sha256":"%s"}`, content.Size, content.SHA256))
+		_ = s.auditSvc.Log(ctx, actorID, actorUsername, "folder_create", "folder", target, "SUCCESS", "", "", "")
 	}
-
-	return content, nil
+	return nil
 }
 
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
+func (s *FileService) CreateFile(ctx context.Context, rawPath string, isRoot bool, allowedPaths []string, actorID, actorUsername string) error {
+	target, err := s.resolvePath(rawPath, isRoot, allowedPaths)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
 
-	out, err := os.Create(dst)
+	dir := filepath.Dir(target)
+	_ = os.MkdirAll(dir, 0755)
+
+	f, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("file đã tồn tại hoặc không thể tạo: %w", err)
+	}
+	_ = f.Close()
+
+	if s.auditSvc != nil {
+		_ = s.auditSvc.Log(ctx, actorID, actorUsername, "file_create", "file", target, "SUCCESS", "", "", "")
+	}
+	return nil
+}
+
+func (s *FileService) DeletePath(ctx context.Context, rawPath string, isRoot bool, allowedPaths []string, actorID, actorUsername string) error {
+	target, err := s.resolvePath(rawPath, isRoot, allowedPaths)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
-	_, err = io.Copy(out, in)
-	return err
+	clean := filepath.Clean(target)
+	if clean == "/" || clean == "/home" || clean == "/home/stephen" || clean == "C:\\" {
+		return errors.New("không được phép xóa thư mục gốc hệ thống")
+	}
+
+	if err := os.RemoveAll(target); err != nil {
+		return fmt.Errorf("xóa tệp/thư mục thất bại: %w", err)
+	}
+
+	if s.auditSvc != nil {
+		_ = s.auditSvc.Log(ctx, actorID, actorUsername, "path_delete", "file", target, "SUCCESS", "", "", "")
+	}
+	return nil
+}
+
+func (s *FileService) RenamePath(ctx context.Context, oldRaw, newRaw string, isRoot bool, allowedPaths []string, actorID, actorUsername string) error {
+	oldTarget, err := s.resolvePath(oldRaw, isRoot, allowedPaths)
+	if err != nil {
+		return err
+	}
+
+	newTarget, err := s.resolvePath(newRaw, isRoot, allowedPaths)
+	if err != nil {
+		return err
+	}
+
+	if err := os.Rename(oldTarget, newTarget); err != nil {
+		return fmt.Errorf("đổi tên thất bại: %w", err)
+	}
+
+	if s.auditSvc != nil {
+		_ = s.auditSvc.Log(ctx, actorID, actorUsername, "path_rename", "file", oldTarget+" -> "+newTarget, "SUCCESS", "", "", "")
+	}
+	return nil
+}
+
+func isTextFile(data []byte) bool {
+	if len(data) == 0 {
+		return true
+	}
+	checkLen := len(data)
+	if checkLen > 512 {
+		checkLen = 512
+	}
+	for i := 0; i < checkLen; i++ {
+		if data[i] == 0 {
+			return false
+		}
+	}
+	return true
 }

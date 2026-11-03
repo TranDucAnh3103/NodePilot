@@ -25,13 +25,16 @@ type Role = string
 const (
 	RoleRoot     Role = "root"
 	RoleAdmin    Role = "admin"
+	RoleUser     Role = "user"
 	RoleOperator Role = "operator"
 	RoleViewer   Role = "viewer"
+	RoleView     Role = "view"
 )
 
 type UserPermissions struct {
-	ViewTabs []string `json:"viewTabs"`
-	EditTabs []string `json:"editTabs"`
+	ViewTabs     []string `json:"viewTabs"`
+	EditTabs     []string `json:"editTabs"`
+	AllowedPaths []string `json:"allowedPaths,omitempty"`
 }
 
 type User struct {
@@ -48,7 +51,14 @@ func (u *User) IsRoot() bool {
 	if u == nil {
 		return false
 	}
-	return u.Role == RoleRoot || u.Username == "stephen3103" || u.Username == "tranducanh31032006@gmail.com"
+	return u.Role == RoleRoot || u.Role == RoleAdmin || u.Username == "stephen3103" || u.Username == "tranducanh31032006@gmail.com" || u.Username == "piganh408@gmail.com"
+}
+
+func (u *User) CanEdit() bool {
+	if u == nil {
+		return false
+	}
+	return u.IsRoot() || u.Role == RoleUser || u.Role == RoleOperator
 }
 
 type Session struct {

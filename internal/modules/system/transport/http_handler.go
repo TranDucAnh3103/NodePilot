@@ -2,7 +2,10 @@ package transport
 
 import (
 	"errors"
+	"os/exec"
+	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -45,6 +48,8 @@ func (h *SystemHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber
 	sysGroup.Get("/history/series", h.HistorySeries)
 	sysGroup.Get("/processes", h.Processes)
 	sysGroup.Get("/power-status", h.PowerStatus)
+	sysGroup.Get("/tailscale", h.Tailscale)
+	sysGroup.Get("/info", h.ServerInfo)
 	sysGroup.Get("/version", h.Version)
 	sysGroup.Get("/update/check", h.CheckUpdate)
 	sysGroup.Post("/update/trigger", h.TriggerUpdate)
@@ -259,6 +264,120 @@ func (h *SystemHandler) History(c fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"data":  history,
 		"meta":  fiber.Map{"requestId": getReqID(c), "count": len(history)},
+		"error": nil,
+	})
+}
+
+type TailscalePeer struct {
+	IP       string `json:"ip"`
+	Hostname string `json:"hostname"`
+	User     string `json:"user"`
+	OS       string `json:"os"`
+	Status   string `json:"status"`
+}
+
+type TailscaleInfo struct {
+	Connected   bool            `json:"connected"`
+	IP          string          `json:"ip"`
+	Hostname    string          `json:"hostname"`
+	Peers       []TailscalePeer `json:"peers"`
+	ActivePeers int             `json:"activePeers"`
+	RawStatus   string          `json:"rawStatus,omitempty"`
+}
+
+func (h *SystemHandler) Tailscale(c fiber.Ctx) error {
+	info := TailscaleInfo{
+		Connected: false,
+		IP:        "",
+		Hostname:  "",
+		Peers:     []TailscalePeer{},
+	}
+
+	outBytes, err := exec.Command("tailscale", "status").CombinedOutput()
+	if err != nil {
+		outBytes, _ = exec.Command("sudo", "-n", "tailscale", "status").CombinedOutput()
+	}
+
+	out := string(outBytes)
+	info.RawStatus = out
+
+	lines := strings.Split(out, "\n")
+	for i, l := range lines {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		fields := strings.Fields(l)
+		if len(fields) >= 4 {
+			ip := fields[0]
+			name := fields[1]
+			user := fields[2]
+			osName := fields[3]
+			statusStr := ""
+			if len(fields) > 4 {
+				statusStr = strings.Join(fields[4:], " ")
+			}
+
+			if i == 0 || statusStr == "-" {
+				info.Connected = true
+				info.IP = ip
+				info.Hostname = name
+			} else {
+				info.Peers = append(info.Peers, TailscalePeer{
+					IP:       ip,
+					Hostname: name,
+					User:     user,
+					OS:       osName,
+					Status:   statusStr,
+				})
+			}
+		}
+	}
+	info.ActivePeers = len(info.Peers)
+
+	// If tailscale status was empty, check tailscale ip -4
+	if info.IP == "" {
+		ipBytes, err := exec.Command("tailscale", "ip", "-4").CombinedOutput()
+		if err == nil && len(ipBytes) > 0 {
+			info.IP = strings.TrimSpace(string(ipBytes))
+			info.Connected = true
+		}
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  info,
+		"error": nil,
+	})
+}
+
+func (h *SystemHandler) ServerInfo(c fiber.Ctx) error {
+	snap, _ := h.telemetrySvc.GetSummary()
+
+	info := fiber.Map{
+		"hostname": "homeserver",
+		"os":       runtime.GOOS,
+		"arch":     runtime.GOARCH,
+		"uptime":   uint64(0),
+		"bootTime": uint64(0),
+		"kernel":   "",
+		"cores":    runtime.NumCPU(),
+		"ramTotal": uint64(0),
+		"summary":  snap,
+	}
+
+	if snap != nil {
+		info["hostname"] = snap.Host.Hostname
+		info["os"] = snap.Host.OS + " (" + snap.Host.Platform + ")"
+		info["arch"] = snap.Host.Architecture
+		info["uptime"] = snap.Host.UptimeSeconds
+		info["bootTime"] = snap.Host.BootTime
+		info["kernel"] = snap.Host.KernelVersion
+		info["cores"] = snap.CPU.Cores
+		info["ramTotal"] = snap.Memory.TotalBytes
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  info,
 		"error": nil,
 	})
 }

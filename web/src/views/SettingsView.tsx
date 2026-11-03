@@ -49,11 +49,14 @@ interface SettingsViewProps {
 
 const AVAILABLE_TABS = [
   { id: 'overview', label: 'Tổng quan hệ thống', canEdit: false },
+  { id: 'terminal', label: 'Web Terminal', canEdit: true, editLabel: 'Shell Root PTY' },
+  { id: 'files', label: 'Quản lý Tệp & Dự án', canEdit: true, editLabel: 'Chỉnh sửa tệp' },
+  { id: 'firewall', label: 'Tường lửa UFW', canEdit: true, editLabel: 'Mở/chặn cổng' },
+  { id: 'nginx', label: 'Nginx Reverse Proxy', canEdit: true, editLabel: 'Sửa Virtual Host' },
   { id: 'docker', label: 'Docker Workloads', canEdit: true, editLabel: 'Start/Stop/Restart' },
   { id: 'services', label: 'Dịch vụ Systemd', canEdit: true, editLabel: 'Restart Service' },
   { id: 'processes', label: 'Tiến trình Host', canEdit: false },
   { id: 'tasks', label: 'Tác vụ định sẵn', canEdit: true, editLabel: 'Thực thi tác vụ' },
-  { id: 'files', label: 'Tệp Sandbox', canEdit: true, editLabel: 'Chỉnh sửa tệp' },
   { id: 'audit', label: 'Nhật ký kiểm toán', canEdit: false },
   { id: 'settings', label: 'Cài đặt & Chính sách', canEdit: true, editLabel: 'Quản trị hệ thống' },
 ]

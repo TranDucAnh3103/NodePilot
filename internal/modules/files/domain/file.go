@@ -15,11 +15,19 @@ var (
 )
 
 type FileItem struct {
-	Name    string    `json:"name"`
-	RelPath string    `json:"relPath"`
-	IsDir   bool      `json:"isDir"`
-	Size    int64     `json:"size"`
-	ModTime time.Time `json:"modTime"`
+	Name      string    `json:"name"`
+	RelPath   string    `json:"relPath"`
+	IsDir     bool      `json:"isDir"`
+	Size      int64     `json:"size"`
+	ModTime   time.Time `json:"modTime"`
+	Mode      string    `json:"mode,omitempty"`
+	Extension string    `json:"extension,omitempty"`
+}
+
+type Bookmark struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+	Icon string `json:"icon"`
 }
 
 type FileContent struct {

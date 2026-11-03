@@ -20,11 +20,14 @@ import (
 	authTransport "hscc/internal/modules/auth/transport"
 	filesApp "hscc/internal/modules/files/app"
 	filesTransport "hscc/internal/modules/files/transport"
+	"hscc/internal/modules/firewall"
+	"hscc/internal/modules/nginx"
 	systemInfra "hscc/internal/modules/system/infra"
 	systemTransport "hscc/internal/modules/system/transport"
 	tasksApp "hscc/internal/modules/tasks/app"
 	tasksTransport "hscc/internal/modules/tasks/transport"
 	"hscc/internal/modules/telemetry"
+	"hscc/internal/modules/terminal"
 	workloadApp "hscc/internal/modules/workloads/app"
 	workloadTransport "hscc/internal/modules/workloads/transport"
 	"hscc/internal/platform/config"
@@ -197,15 +200,29 @@ func (s *Server) setupRoutes() {
 		tasksH.RegisterRoutes(api, authMiddleware)
 	}
 
-	// Register Scoped File Manager Routes (Sandbox)
+	// Register Scoped File Manager Routes
 	if s.fileSvc != nil {
 		filesH := filesTransport.NewFilesHandler(s.fileSvc)
 		filesH.RegisterRoutes(api, authMiddleware)
 	}
 
+	// Register Firewall (UFW) Routes
+	firewallSvc := firewall.NewService()
+	firewallH := firewall.NewHandler(firewallSvc, s.auditSvc)
+	firewallH.RegisterRoutes(api, authMiddleware)
+
+	// Register Web Server & Reverse Proxy (Nginx) Routes
+	nginxSvc := nginx.NewService()
+	nginxH := nginx.NewHandler(nginxSvc, s.auditSvc)
+	nginxH.RegisterRoutes(api, authMiddleware)
+
 	// Register Realtime WebSocket Route with alerts integration
 	wsH := wsTransport.NewMetricsWSHandler(s.telemetrySvc, s.alertsEngine, s.jwtManager, s.cfg.AllowedOrigins)
 	s.app.Get("/ws/metrics", wsH.UpgradeMiddleware(), wsH.HandleWS())
+
+	// Register Interactive Web Terminal Console Route (Root only)
+	terminalH := terminal.NewTerminalHandler(s.jwtManager)
+	s.app.Get("/ws/terminal", terminalH.UpgradeMiddleware(), terminalH.HandleWS())
 
 	// Top-level friendly navigation redirects for browser address bar
 	s.app.Get("/login", func(c fiber.Ctx) error {
