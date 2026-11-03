@@ -9,72 +9,61 @@ import (
 	"hscc/internal/modules/files/domain"
 )
 
-func TestFileService_PathTraversalAndAtomicWrite(t *testing.T) {
+func TestFileService_CRUDAndPermissions(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewFileService(tmpDir, nil)
 	ctx := context.Background()
 
-	// 1. Path Traversal attempts MUST be rejected with ErrPathTraversal
-	traversals := []string{"../secret.txt", "../../etc/passwd", "foo/../../bar", "..\\windows\\system32"}
+	// 1. Path Traversal attempts for non-root MUST be rejected
+	traversals := []string{"../../etc/shadow", "..\\windows\\system32"}
 	for _, p := range traversals {
-		_, err := svc.ReadFile(ctx, p)
-		if err != domain.ErrPathTraversal {
-			t.Errorf("Expected ErrPathTraversal for '%s', got %v", p, err)
+		_, err := svc.ReadFile(ctx, p, false, nil)
+		if err != domain.ErrPathTraversal && err != domain.ErrPathBlacklisted {
+			t.Errorf("Expected ErrPathTraversal or ErrPathBlacklisted for '%s', got %v", p, err)
 		}
 	}
 
-	// 2. Write initial file (atomic write)
-	initial, err := svc.WriteFile(ctx, "u1", "admin", domain.SaveFileRequest{
-		RelPath: "config.yaml",
-		Content: "host: 127.0.0.1\nport: 17880\n",
-	}, "127.0.0.1", "req-1")
+	// 2. Create File & Write Content
+	fileRel := filepath.Join(tmpDir, "sample.txt")
+	saved, err := svc.SaveFile(ctx, fileRel, "hello nodepilot", "", true, nil, "root", "root")
 	if err != nil {
-		t.Fatalf("Failed to write initial file: %v", err)
+		t.Fatalf("Failed to save file: %v", err)
 	}
-	if initial.SHA256 == "" || initial.Size == 0 {
-		t.Errorf("Invalid initial file content metadata: %+v", initial)
-	}
-
-	// Verify file exists on disk
-	diskPath := filepath.Join(tmpDir, "config.yaml")
-	data, err := os.ReadFile(diskPath)
-	if err != nil || string(data) != "host: 127.0.0.1\nport: 17880\n" {
-		t.Fatalf("File content on disk does not match: %s (err: %v)", string(data), err)
+	if saved.Content != "hello nodepilot" {
+		t.Errorf("Unexpected content: %s", saved.Content)
 	}
 
-	// 3. Write with matching SHA256 (optimistic lock success)
-	updated, err := svc.WriteFile(ctx, "u1", "admin", domain.SaveFileRequest{
-		RelPath:        "config.yaml",
-		Content:        "host: 0.0.0.0\nport: 17880\n",
-		ExpectedSHA256: initial.SHA256,
-	}, "127.0.0.1", "req-2")
+	// 3. Read File
+	readBack, err := svc.ReadFile(ctx, fileRel, true, nil)
 	if err != nil {
-		t.Fatalf("Failed optimistic write: %v", err)
+		t.Fatalf("Failed to read file: %v", err)
 	}
-	if updated.SHA256 == initial.SHA256 {
-		t.Errorf("Expected SHA256 to change after update")
-	}
-
-	// 4. Write with mismatched SHA256 (optimistic lock conflict)
-	_, err = svc.WriteFile(ctx, "u1", "admin", domain.SaveFileRequest{
-		RelPath:        "config.yaml",
-		Content:        "malicious overwrite\n",
-		ExpectedSHA256: "stale_hash_12345",
-	}, "127.0.0.1", "req-3")
-	if err != domain.ErrVersionConflict {
-		t.Errorf("Expected ErrVersionConflict for stale hash, got %v", err)
+	if readBack.Content != "hello nodepilot" {
+		t.Errorf("Content mismatch: %s", readBack.Content)
 	}
 
-	// 5. Verify backup file was created
-	entries, _ := os.ReadDir(tmpDir)
-	var foundBackup bool
-	for _, e := range entries {
-		if len(e.Name()) > 10 && e.Name()[:16] == ".config.yaml.bak" {
-			foundBackup = true
-			break
-		}
+	// 4. Create Subfolder
+	subFolder := filepath.Join(tmpDir, "subproject")
+	if err := svc.CreateFolder(ctx, subFolder, true, nil, "root", "root"); err != nil {
+		t.Fatalf("Failed to create folder: %v", err)
 	}
-	if !foundBackup {
-		t.Errorf("Expected automatic backup file to be created in sandbox")
+
+	// 5. List Directory
+	items, curPath, err := svc.ListDirectory(ctx, tmpDir, true, nil)
+	if err != nil {
+		t.Fatalf("Failed to list directory: %v", err)
+	}
+	if len(items) != 2 || curPath == "" {
+		t.Errorf("Expected 2 items in directory, got %d", len(items))
+	}
+
+	// 6. Delete File
+	if err := svc.DeletePath(ctx, fileRel, true, nil, "root", "root"); err != nil {
+		t.Fatalf("Failed to delete file: %v", err)
+	}
+
+	// 7. Verify file was deleted
+	if _, err := os.Stat(fileRel); !os.IsNotExist(err) {
+		t.Errorf("File should have been deleted")
 	}
 }

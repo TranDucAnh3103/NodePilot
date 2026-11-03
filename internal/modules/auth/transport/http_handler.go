@@ -78,6 +78,7 @@ func (h *AuthHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.H
 	authGroup.Post("/accounts", authMiddleware, h.CreateAccount)
 	authGroup.Put("/accounts/:id/role", authMiddleware, h.UpdateAccountRole)
 	authGroup.Put("/accounts/:id/permissions", authMiddleware, h.UpdateAccountPermissions)
+	authGroup.Put("/accounts/:id/password", authMiddleware, h.ResetAccountPassword)
 	authGroup.Delete("/accounts/:id", authMiddleware, h.DeleteAccount)
 
 	// Gmail Allowlist (Admin only)
@@ -497,6 +498,44 @@ func (h *AuthHandler) DeleteAccount(c fiber.Ctx) error {
 	}
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"data":  fiber.Map{"success": true},
+		"meta":  fiber.Map{"requestId": getReqID(c)},
+		"error": nil,
+	})
+}
+
+type ResetPasswordRequest struct {
+	NewPassword string `json:"newPassword"`
+}
+
+func (h *AuthHandler) ResetAccountPassword(c fiber.Ctx) error {
+	if err := h.requireAdmin(c); err != nil {
+		return err
+	}
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "ID người dùng là bắt buộc"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	var req ResetPasswordRequest
+	if err := c.Bind().JSON(&req); err != nil || len(req.NewPassword) < 6 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "Mật khẩu mới phải từ 6 ký tự trở lên"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	if err := h.authSvc.ResetPasswordByID(c.Context(), id, req.NewPassword); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "RESET_PASSWORD_FAILED", "message": err.Error()},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  fiber.Map{"success": true, "message": "Đặt lại mật khẩu thành công"},
 		"meta":  fiber.Map{"requestId": getReqID(c)},
 		"error": nil,
 	})

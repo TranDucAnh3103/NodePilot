@@ -206,15 +206,25 @@ func (sc *SystemdClient) GetServiceLogs(ctx context.Context, unitName string, ta
 }
 
 func (sc *SystemdClient) RestartService(ctx context.Context, unitName string) error {
+	return sc.ExecuteAction(ctx, unitName, "restart")
+}
+
+func (sc *SystemdClient) ExecuteAction(ctx context.Context, unitName, action string) error {
 	if !sc.isLinux {
-		return nil // Simulated restart succeeds
+		return nil // Simulated succeeds
 	}
 
-	cmd := exec.CommandContext(ctx, "systemctl", "restart", unitName)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("systemctl restart %s failed: %w", unitName, err)
+	act := strings.ToLower(strings.TrimSpace(action))
+	switch act {
+	case "start", "stop", "restart":
+		cmd := exec.CommandContext(ctx, "systemctl", act, unitName)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("systemctl %s %s failed: %w", act, unitName, err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported systemd action: %s", action)
 	}
-	return nil
 }
 
 func (sc *SystemdClient) getSimulatedServices() []*domain.ServiceUnit {

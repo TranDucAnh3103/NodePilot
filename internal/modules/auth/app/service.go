@@ -24,6 +24,7 @@ type AuthRepo interface {
 	GetUserByUsername(ctx context.Context, username string) (*domain.User, error)
 	GetUserByID(ctx context.Context, id string) (*domain.User, error)
 	UpdatePassword(ctx context.Context, username, newHash string) error
+	UpdatePasswordByID(ctx context.Context, id, newHash string) error
 	CreateSession(ctx context.Context, s *domain.Session) error
 	GetSessionByTokenHash(ctx context.Context, hash string) (*domain.Session, error)
 	RevokeSession(ctx context.Context, sessionID string) error
@@ -119,8 +120,8 @@ func (s *AuthService) CreateUserWithRole(ctx context.Context, username, password
 	if len(password) < 6 {
 		return nil, domain.ErrWeakPassword
 	}
-	if role != domain.RoleAdmin && role != domain.RoleOperator && role != domain.RoleViewer {
-		role = domain.RoleViewer
+	if role != domain.RoleRoot && role != domain.RoleAdmin && role != domain.RoleUser && role != domain.RoleOperator && role != domain.RoleViewer && role != domain.RoleView {
+		role = domain.RoleView
 	}
 
 	existing, _ := s.repo.GetUserByUsername(ctx, username)
@@ -188,6 +189,25 @@ func (s *AuthService) ResetPassword(ctx context.Context, username, newPassword s
 	// Revoke all existing sessions to enforce re-login
 	_ = s.repo.RevokeAllUserSessions(ctx, user.ID)
 
+	return nil
+}
+
+// ResetPasswordByID allows administrators to reset a user's password by ID.
+func (s *AuthService) ResetPasswordByID(ctx context.Context, id, newPassword string) error {
+	if len(newPassword) < 6 {
+		return domain.ErrWeakPassword
+	}
+
+	hash, err := security.HashPassword(newPassword, security.DefaultArgon2Params)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	if err := s.repo.UpdatePasswordByID(ctx, id, hash); err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+
+	_ = s.repo.RevokeAllUserSessions(ctx, id)
 	return nil
 }
 

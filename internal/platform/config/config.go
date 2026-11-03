@@ -51,7 +51,7 @@ type Config struct {
 	Production      bool
 }
 
-var GitCommit = "01fb70c"
+var GitCommit = "78559ae"
 
 func LoadConfig() *Config {
 	host := getEnv("HSCC_HOST", "127.0.0.1")
@@ -89,6 +89,7 @@ func LoadConfig() *Config {
 	origins := []string{
 		"http://127.0.0.1:17880",
 		"http://localhost:17880",
+		"http://100.123.94.61:17880",
 		"http://localhost:5173",
 		"http://127.0.0.1:5173",
 		"https://*.vercel.app",
@@ -138,7 +139,7 @@ func LoadConfig() *Config {
 		WatchtowerToken:      getEnv("WATCHTOWER_HTTP_TOKEN", "nodepilot-secret-watchtower-token"),
 		GitHubRepo:           getEnv("GITHUB_REPOSITORY", detectGitRepository()),
 		Version:              getEnv("HSCC_VERSION", "v1.0.0"),
-		Commit:               getEnv("HSCC_COMMIT", GitCommit),
+		Commit:               getEnv("HSCC_COMMIT", detectGitCommit()),
 		IdleCollectIntervalS: getInt("HSCC_IDLE_COLLECT_INTERVAL_S", 60, 0),
 		ActiveGraceS:         getInt("HSCC_ACTIVE_GRACE_S", 30, 0),
 		MemoryLimitMiB:       getInt("HSCC_MEMORY_LIMIT_MIB", 100, 0),
@@ -246,4 +247,37 @@ func detectGitRepository() string {
 	}
 
 	return "TranDucAnh3103/NodePilot"
+}
+
+func detectGitCommit() string {
+	if commit := os.Getenv("HSCC_COMMIT"); commit != "" {
+		return strings.TrimSpace(commit)
+	}
+	if GitCommit != "" && GitCommit != "01fb70c" && GitCommit != "c72974f" && GitCommit != "dev" {
+		return GitCommit
+	}
+	// Try reading git rev-parse --short HEAD
+	cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+	if out, err := cmd.Output(); err == nil {
+		c := strings.TrimSpace(string(out))
+		if c != "" {
+			return c
+		}
+	}
+	// Fallback to reading .git/HEAD
+	if headData, err := os.ReadFile(".git/HEAD"); err == nil {
+		headStr := strings.TrimSpace(string(headData))
+		if strings.HasPrefix(headStr, "ref: ") {
+			refPath := filepath.Join(".git", strings.TrimPrefix(headStr, "ref: "))
+			if refData, err := os.ReadFile(refPath); err == nil {
+				h := strings.TrimSpace(string(refData))
+				if len(h) >= 7 {
+					return h[:7]
+				}
+			}
+		} else if len(headStr) >= 7 {
+			return headStr[:7]
+		}
+	}
+	return "78559ae"
 }

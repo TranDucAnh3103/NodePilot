@@ -42,7 +42,7 @@ func NewDockerClient(socketPath string) *DockerClient {
 		Transport: &http.Transport{
 			DialContext: dialer,
 		},
-		Timeout: 10 * time.Second,
+		Timeout: 25 * time.Second,
 	}
 
 	dc := &DockerClient{
@@ -199,18 +199,22 @@ func (dc *DockerClient) ExecuteAction(ctx context.Context, id, action string) er
 	}
 
 	var url string
+	method := "POST"
 	switch strings.ToLower(action) {
 	case "start":
 		url = fmt.Sprintf("http://localhost/containers/%s/start", id)
 	case "stop":
-		url = fmt.Sprintf("http://localhost/containers/%s/stop", id)
+		url = fmt.Sprintf("http://localhost/containers/%s/stop?t=5", id)
 	case "restart":
-		url = fmt.Sprintf("http://localhost/containers/%s/restart", id)
+		url = fmt.Sprintf("http://localhost/containers/%s/restart?t=5", id)
+	case "delete", "remove":
+		url = fmt.Sprintf("http://localhost/containers/%s?force=true", id)
+		method = "DELETE"
 	default:
 		return fmt.Errorf("unsupported docker action: %s", action)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return err
 	}

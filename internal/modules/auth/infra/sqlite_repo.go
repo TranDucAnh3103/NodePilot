@@ -285,13 +285,29 @@ func (r *AuthRepository) InitAuthTables(ctx context.Context) error {
 			updated_at TIMESTAMP
 		);
 		INSERT OR IGNORE INTO auth_email_allowlist (email, created_at)
+		VALUES ('piganh408@gmail.com', CURRENT_TIMESTAMP);
+		INSERT OR IGNORE INTO auth_email_allowlist (email, created_at)
 		VALUES ('tranducanh31032006@gmail.com', CURRENT_TIMESTAMP);
 		INSERT OR IGNORE INTO smtp_config (id, host, port, username, password, from_name, app_name, updated_at)
-		VALUES (1, 'smtp.gmail.com', 587, 'tranducanh31032006@gmail.com', 'obmfifcvenlomxvh', 'stephen lab', 'badminton', CURRENT_TIMESTAMP);
+		VALUES (1, 'smtp.gmail.com', 587, 'piganh408@gmail.com', 'agkdvggtiijyfmhb', 'ELMS-Ekila-Academy', 'NodePilot HSCC', CURRENT_TIMESTAMP);
+		UPDATE smtp_config SET username = 'piganh408@gmail.com', password = 'agkdvggtiijyfmhb', from_name = 'ELMS-Ekila-Academy', app_name = 'NodePilot HSCC' WHERE id = 1;
 	`)
 	_, _ = r.db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT ''`)
-	_, _ = r.db.ExecContext(ctx, `UPDATE users SET role = 'root' WHERE username IN ('stephen3103', 'tranducanh31032006@gmail.com')`)
+	_, _ = r.db.ExecContext(ctx, `UPDATE users SET role = 'root' WHERE username IN ('stephen3103', 'tranducanh31032006@gmail.com', 'piganh408@gmail.com', 'admin')`)
 	return err
+}
+
+func (r *AuthRepository) UpdatePasswordByID(ctx context.Context, id, newHash string) error {
+	query := `UPDATE users SET password_hash = ? WHERE id = ?`
+	res, err := r.db.ExecContext(ctx, query, newHash, id)
+	if err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil || rowsAffected == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
 }
 
 func (r *AuthRepository) ListUsers(ctx context.Context) ([]*domain.User, error) {

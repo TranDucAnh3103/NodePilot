@@ -17,6 +17,9 @@ import { FilesView } from './views/FilesView'
 import { ProcessesView } from './views/ProcessesView'
 import { AuditView } from './views/AuditView'
 import { SettingsView } from './views/SettingsView'
+import { TerminalView } from './views/TerminalView'
+import { FirewallView } from './views/FirewallView'
+import { NginxView } from './views/NginxView'
 import { transition } from './lib/motion'
 
 export function App() {
@@ -231,6 +234,7 @@ export function App() {
                     snapshot={snapshot}
                     cpuHistory={cpuHistory}
                     netHistory={netHistory}
+                    onNavigate={(tab) => setCurrentTab(tab)}
                   />
                 )}
                 {currentTab === 'system' && (
@@ -238,13 +242,17 @@ export function App() {
                     snapshot={snapshot}
                     cpuHistory={cpuHistory}
                     netHistory={netHistory}
+                    onNavigate={(tab) => setCurrentTab(tab)}
                   />
                 )}
-                {currentTab === 'docker' && <WorkloadsView />}
-                {currentTab === 'services' && <ServicesView />}
-                {currentTab === 'processes' && <ProcessesView />}
-                {currentTab === 'tasks' && <TasksView />}
-                {currentTab === 'files' && <FilesView />}
+                {currentTab === 'terminal' && <TerminalView currentUser={currentUser} />}
+                {currentTab === 'firewall' && <FirewallView currentUser={currentUser} />}
+                {currentTab === 'nginx' && <NginxView currentUser={currentUser} />}
+                {currentTab === 'docker' && <WorkloadsView currentUser={currentUser} />}
+                {currentTab === 'services' && <ServicesView currentUser={currentUser} />}
+                {currentTab === 'processes' && <ProcessesView currentUser={currentUser} />}
+                {currentTab === 'tasks' && <TasksView currentUser={currentUser} />}
+                {currentTab === 'files' && <FilesView currentUser={currentUser} />}
                 {currentTab === 'audit' && <AuditView />}
                 {currentTab === 'settings' && <SettingsView currentUser={currentUser} />}
               </motion.div>

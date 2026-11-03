@@ -42,6 +42,9 @@ func (m *mockSystemdPort) GetServiceLogs(ctx context.Context, unitName string, t
 func (m *mockSystemdPort) RestartService(ctx context.Context, unitName string) error {
 	return nil
 }
+func (m *mockSystemdPort) ExecuteAction(ctx context.Context, unitName, action string) error {
+	return nil
+}
 
 func setupWorkloadTestDB(t *testing.T) (*sqlite.DB, func()) {
 	tmpDir, err := os.MkdirTemp("", "hscc_workload_test_*")

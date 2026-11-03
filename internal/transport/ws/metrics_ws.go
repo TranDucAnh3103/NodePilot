@@ -62,8 +62,13 @@ func (h *MetricsWSHandler) isOriginAllowed(origin string) bool {
 	}
 	host := parsed.Host
 
-	// Allow Vercel deployments and localhost / tailscale domains
+	// Allow Vercel deployments, Tailscale IPs (100.x), and LAN IPs
 	if strings.HasSuffix(host, ".vercel.app") {
+		return true
+	}
+
+	hostname := parsed.Hostname()
+	if strings.HasPrefix(hostname, "100.") || strings.HasPrefix(hostname, "192.168.") || strings.HasPrefix(hostname, "10.") || strings.HasPrefix(hostname, "172.") || hostname == "localhost" || hostname == "127.0.0.1" {
 		return true
 	}
 

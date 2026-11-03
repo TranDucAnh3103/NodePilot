@@ -24,10 +24,6 @@ var HardcodedDenylist = []string{
 	"cloudflared.service",
 	"caddy",
 	"caddy.service",
-	"mysql",
-	"mysql.service",
-	"mariadb",
-	"mariadb.service",
 	"docker",
 	"docker.service",
 	"containerd",
@@ -120,7 +116,8 @@ func IsProtected(identifier string) bool {
 
 // CanMutateDocker checks if a mutation action on a container is permitted.
 // 1. Checks Hardcoded Denylist (fails immediately if matched).
-// 2. Checks Allowlist by exact container name or compose project.
+// 2. Checks Allowlist by exact container name, compose project, or wildcard "*".
+// 3. Defaults to permitting standard operations (start, stop, restart, delete, remove) for non-denylisted containers in homeserver mode.
 func (pe *PolicyEngine) CanMutateDocker(containerName, projectName, action string) (bool, string) {
 	cleanName := strings.TrimPrefix(strings.TrimSpace(containerName), "/")
 	act := strings.ToLower(strings.TrimSpace(action))
@@ -133,29 +130,35 @@ func (pe *PolicyEngine) CanMutateDocker(containerName, projectName, action strin
 	pe.mu.RLock()
 	defer pe.mu.RUnlock()
 
-	if pe.policy == nil || len(pe.policy.Allowlist.Docker) == 0 {
-		return false, fmt.Sprintf("Target container '%s' is not in the Allowlist (Default Deny).", cleanName)
-	}
-
-	for _, rule := range pe.policy.Allowlist.Docker {
-		matched := false
-		if rule.Name != "" && strings.EqualFold(rule.Name, cleanName) {
-			matched = true
-		} else if rule.Project != "" && projectName != "" && strings.EqualFold(rule.Project, projectName) {
-			matched = true
-		}
-
-		if matched {
-			for _, allowedAction := range rule.Actions {
-				if strings.EqualFold(allowedAction, act) {
-					return true, ""
-				}
+	// If explicit policy rules exist, evaluate them
+	if pe.policy != nil && len(pe.policy.Allowlist.Docker) > 0 {
+		for _, rule := range pe.policy.Allowlist.Docker {
+			matched := false
+			if rule.Name == "*" || strings.EqualFold(rule.Name, cleanName) {
+				matched = true
+			} else if rule.Project != "" && (rule.Project == "*" || (projectName != "" && strings.EqualFold(rule.Project, projectName))) {
+				matched = true
 			}
-			return false, fmt.Sprintf("Action '%s' is not permitted for container '%s'. Allowed: %v", act, cleanName, rule.Actions)
+
+			if matched {
+				for _, allowedAction := range rule.Actions {
+					if allowedAction == "*" || strings.EqualFold(allowedAction, act) {
+						return true, ""
+					}
+				}
+				return false, fmt.Sprintf("Action '%s' is not permitted for container '%s'. Allowed: %v", act, cleanName, rule.Actions)
+			}
 		}
+		return false, fmt.Sprintf("Target container '%s' (project: %s) is not in the Allowlist.", cleanName, projectName)
 	}
 
-	return false, fmt.Sprintf("Target container '%s' (project: %s) is not in the Allowlist.", cleanName, projectName)
+	// Default in homeserver control center: allow standard operations on all non-denylisted containers
+	switch act {
+	case "start", "stop", "restart", "delete", "remove":
+		return true, ""
+	default:
+		return false, fmt.Sprintf("Action '%s' is not supported for container '%s'.", act, cleanName)
+	}
 }
 
 // CanMutateSystemd checks if a mutation action on a systemd unit is permitted.
@@ -171,20 +174,30 @@ func (pe *PolicyEngine) CanMutateSystemd(unitName, action string) (bool, string)
 	pe.mu.RLock()
 	defer pe.mu.RUnlock()
 
-	if pe.policy == nil || len(pe.policy.Allowlist.Systemd) == 0 {
-		return false, fmt.Sprintf("Service '%s' is not registered in the Allowlist (Default Deny).", cleanUnit)
-	}
-
-	for _, rule := range pe.policy.Allowlist.Systemd {
-		if strings.EqualFold(rule.Unit, cleanUnit) || strings.EqualFold(rule.Name, cleanUnit) {
-			for _, allowedAction := range rule.Actions {
-				if strings.EqualFold(allowedAction, act) {
-					return true, ""
-				}
+	// If explicit policy rules exist, evaluate them
+	if pe.policy != nil && len(pe.policy.Allowlist.Systemd) > 0 {
+		for _, rule := range pe.policy.Allowlist.Systemd {
+			matched := false
+			if rule.Unit == "*" || rule.Name == "*" || strings.EqualFold(rule.Unit, cleanUnit) || strings.EqualFold(rule.Name, cleanUnit) {
+				matched = true
 			}
-			return false, fmt.Sprintf("Action '%s' is not permitted for service '%s'. Allowed: %v", act, cleanUnit, rule.Actions)
+			if matched {
+				for _, allowedAction := range rule.Actions {
+					if allowedAction == "*" || strings.EqualFold(allowedAction, act) {
+						return true, ""
+					}
+				}
+				return false, fmt.Sprintf("Action '%s' is not permitted for service '%s'. Allowed: %v", act, cleanUnit, rule.Actions)
+			}
 		}
+		return false, fmt.Sprintf("Service '%s' is not in the Allowlist.", cleanUnit)
 	}
 
-	return false, fmt.Sprintf("Service '%s' is not in the Allowlist.", cleanUnit)
+	// Default in homeserver control center: allow standard lifecycle actions on all non-denylisted services
+	switch act {
+	case "start", "stop", "restart":
+		return true, ""
+	default:
+		return false, fmt.Sprintf("Action '%s' is not supported for service '%s'.", act, cleanUnit)
+	}
 }

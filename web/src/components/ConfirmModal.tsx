@@ -7,7 +7,7 @@ interface ConfirmModalProps {
   isOpen: boolean
   title: string
   targetName: string
-  actionType: 'start' | 'stop' | 'restart' | 'kill'
+  actionType: 'start' | 'stop' | 'restart' | 'kill' | 'delete' | 'remove'
   onConfirm: () => void
   onCancel: () => void
   isProcessing?: boolean
@@ -26,8 +26,8 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
   if (!isOpen) return null
 
-  const isDestructive = actionType === 'stop' || actionType === 'kill'
-  const requiresTypeToConfirm = isDestructive
+  const isDestructive = actionType === 'stop' || actionType === 'kill' || actionType === 'delete' || actionType === 'remove'
+  const requiresTypeToConfirm = actionType === 'delete' || actionType === 'remove'
 
   const isConfirmEnabled = requiresTypeToConfirm
     ? typedConfirmation.trim().toLowerCase() === targetName.toLowerCase()

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -25,13 +26,16 @@ type Role = string
 const (
 	RoleRoot     Role = "root"
 	RoleAdmin    Role = "admin"
+	RoleUser     Role = "user"
 	RoleOperator Role = "operator"
 	RoleViewer   Role = "viewer"
+	RoleView     Role = "view"
 )
 
 type UserPermissions struct {
-	ViewTabs []string `json:"viewTabs"`
-	EditTabs []string `json:"editTabs"`
+	ViewTabs     []string `json:"viewTabs"`
+	EditTabs     []string `json:"editTabs"`
+	AllowedPaths []string `json:"allowedPaths,omitempty"`
 }
 
 type User struct {
@@ -48,7 +52,50 @@ func (u *User) IsRoot() bool {
 	if u == nil {
 		return false
 	}
-	return u.Role == RoleRoot || u.Username == "stephen3103" || u.Username == "tranducanh31032006@gmail.com"
+	return u.Role == RoleRoot || u.Role == RoleAdmin || u.Username == "stephen3103" || u.Username == "tranducanh31032006@gmail.com" || u.Username == "piganh408@gmail.com"
+}
+
+func (u *User) CanEdit() bool {
+	if u == nil {
+		return false
+	}
+	return u.IsRoot() || u.Role == RoleUser || u.Role == RoleOperator
+}
+
+func (u *User) CanEditTab(tab string) bool {
+	if u == nil {
+		return false
+	}
+	if u.IsRoot() {
+		return true
+	}
+	if u.Permissions == nil {
+		return false
+	}
+	for _, t := range u.Permissions.EditTabs {
+		if strings.EqualFold(t, tab) {
+			return true
+		}
+	}
+	return false
+}
+
+func (u *User) CanViewTab(tab string) bool {
+	if u == nil {
+		return false
+	}
+	if u.IsRoot() {
+		return true
+	}
+	if u.Permissions == nil {
+		return false
+	}
+	for _, t := range u.Permissions.ViewTabs {
+		if strings.EqualFold(t, tab) {
+			return true
+		}
+	}
+	return false
 }
 
 type Session struct {

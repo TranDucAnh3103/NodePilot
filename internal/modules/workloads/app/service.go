@@ -24,6 +24,7 @@ type SystemdPort interface {
 	ListServices(ctx context.Context) ([]*domain.ServiceUnit, error)
 	GetServiceLogs(ctx context.Context, unitName string, tailLines int) (string, error)
 	RestartService(ctx context.Context, unitName string) error
+	ExecuteAction(ctx context.Context, unitName, action string) error
 }
 
 type ActionRepo interface {
@@ -74,7 +75,7 @@ func (s *WorkloadService) ListContainers(ctx context.Context) ([]*domain.Contain
 
 		// Check allowlist for standard actions
 		var allowed []string
-		for _, act := range []string{"start", "stop", "restart"} {
+		for _, act := range []string{"start", "stop", "restart", "delete"} {
 			if ok, _ := s.policyEngine.CanMutateDocker(c.Name, c.Project, act); ok {
 				allowed = append(allowed, act)
 			}
@@ -139,7 +140,7 @@ func (s *WorkloadService) ExecuteContainerAction(
 	}
 
 	// 3. Execute with Timeout
-	actionCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	actionCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
 	err := s.dockerClient.ExecuteAction(actionCtx, cleanName, action)
@@ -180,7 +181,7 @@ func (s *WorkloadService) ListServices(ctx context.Context) ([]*domain.ServiceUn
 
 		// Check allowlist
 		var allowed []string
-		for _, act := range []string{"restart"} {
+		for _, act := range []string{"start", "stop", "restart"} {
 			if ok, _ := s.policyEngine.CanMutateSystemd(svc.Name, act); ok {
 				allowed = append(allowed, act)
 			}
@@ -248,10 +249,10 @@ func (s *WorkloadService) ExecuteServiceAction(
 	}
 
 	// 3. Execute with Timeout
-	actionCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	actionCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
-	err := s.systemdClient.RestartService(actionCtx, cleanUnit)
+	err := s.systemdClient.ExecuteAction(actionCtx, cleanUnit, action)
 	if err != nil {
 		_ = s.actionRepo.UpdateState(ctx, actionRecord.ID, "failed", "EXECUTION_ERROR")
 		_ = s.auditSvc.Log(ctx, actorID, actorUsername, verb, "systemd", cleanUnit, "failed", requestID, ip,

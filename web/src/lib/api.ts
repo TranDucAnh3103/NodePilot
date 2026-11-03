@@ -12,6 +12,12 @@ import {
   TaskExecution,
   FileItem,
   FileContent,
+  Bookmark,
+  FirewallStatus,
+  FirewallRule,
+  NginxStatus,
+  NginxSite,
+  TailscaleInfo,
   ProcessInfo,
   Alert,
   PowerStatus,
@@ -213,7 +219,7 @@ export async function getContainerLogs(id: string, tail: number = 200): Promise<
 
 export async function executeContainerAction(
   name: string,
-  operation: 'start' | 'stop' | 'restart',
+  operation: 'start' | 'stop' | 'restart' | 'delete' | 'remove',
   reason: string,
   idempotencyKey: string,
   project?: string
@@ -230,6 +236,16 @@ export async function executeContainerAction(
   const json = await res.json()
   if (!res.ok) {
     throw new Error(json.error?.message || `Thao tác ${operation} thất bại`)
+  }
+}
+
+export async function killProcess(pid: number): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/system/processes/${pid}/kill`, {
+    method: 'POST',
+  })
+  const json = await res.json()
+  if (!res.ok) {
+    throw new Error(json.error?.message || `Không thể dừng tiến trình PID ${pid}`)
   }
 }
 
@@ -322,11 +338,18 @@ export async function cancelTask(id: string): Promise<void> {
   if (!res.ok) throw new Error(json.error?.message || 'Hủy tác vụ thất bại')
 }
 
-export async function listFiles(path: string = '.'): Promise<FileItem[]> {
+export async function getFileBookmarks(): Promise<Bookmark[]> {
+  const res = await fetchWithAuth('/api/v1/files/bookmarks')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải bookmarks')
+  return json.data || []
+}
+
+export async function listFiles(path: string = ''): Promise<{ currentPath: string; items: FileItem[] }> {
   const res = await fetchWithAuth(`/api/v1/files/list?path=${encodeURIComponent(path)}`)
   const json = await res.json()
   if (!res.ok) throw new Error(json.error?.message || 'Không thể duyệt thư mục')
-  return json.data || []
+  return json.data || { currentPath: path, items: [] }
 }
 
 export async function getFileContent(path: string): Promise<FileContent> {
@@ -336,15 +359,75 @@ export async function getFileContent(path: string): Promise<FileContent> {
   return json.data
 }
 
-export async function saveFileContent(relPath: string, content: string, expectedSha256?: string): Promise<FileContent> {
+export async function saveFileContent(path: string, content: string, expectedSha256?: string): Promise<FileContent> {
   const res = await fetchWithAuth('/api/v1/files/content', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ relPath, content, expectedSha256 }),
+    body: JSON.stringify({ path, content, expectedSha256 }),
   })
   const json = await res.json()
   if (!res.ok) throw new Error(json.error?.message || 'Lưu file thất bại')
   return json.data
+}
+
+export async function createFolder(path: string): Promise<void> {
+  const res = await fetchWithAuth('/api/v1/files/folder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tạo thư mục')
+}
+
+export async function createFile(path: string): Promise<void> {
+  const res = await fetchWithAuth('/api/v1/files/file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tạo tệp mới')
+}
+
+export async function deleteFileOrFolder(path: string): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/files/path?path=${encodeURIComponent(path)}`, {
+    method: 'DELETE',
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Xóa thất bại')
+}
+
+export async function renameFileOrFolder(oldPath: string, newPath: string): Promise<void> {
+  const res = await fetchWithAuth('/api/v1/files/rename', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ oldPath, newPath }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Đổi tên thất bại')
+}
+
+export async function uploadFile(destDir: string, file: File): Promise<void> {
+  const formData = new FormData()
+  formData.append('destination', destDir)
+  formData.append('file', file)
+
+  const token = getAccessToken()
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const res = await fetch(buildApiUrl('/api/v1/files/upload'), {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: formData,
+  })
+
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Tải file lên thất bại')
 }
 
 export async function getProcesses(sort: string = 'cpu', limit: number = 50): Promise<ProcessInfo[]> {
@@ -480,3 +563,146 @@ export async function testSMTP(targetEmail?: string): Promise<{ success: boolean
   if (!res.ok) throw new Error(json.error?.message || 'Gửi thử nghiệm SMTP thất bại')
   return json.data
 }
+
+export async function resetAccountPassword(id: string, newPassword: string): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/auth/accounts/${encodeURIComponent(id)}/password`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ newPassword }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Đặt lại mật khẩu thất bại')
+}
+
+// --- Firewall (UFW) ---
+export async function getFirewallStatus(): Promise<FirewallStatus> {
+  const res = await fetchWithAuth('/api/v1/firewall/status')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải trạng thái tường lửa')
+  return json.data
+}
+
+export async function addFirewallRule(rule: Partial<FirewallRule> & { port: string; action: string; proto?: string; protocol?: string }): Promise<void> {
+  const payload = {
+    ...rule,
+    proto: rule.proto || rule.protocol || 'tcp',
+  }
+  const res = await fetchWithAuth('/api/v1/firewall/rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Thêm quy tắc tường lửa thất bại')
+}
+
+export async function deleteFirewallRule(ruleNumber: number): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/firewall/rules/${ruleNumber}`, {
+    method: 'DELETE',
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Xóa quy tắc tường lửa thất bại')
+}
+
+export async function toggleFirewall(enable: boolean): Promise<FirewallStatus> {
+  const res = await fetchWithAuth('/api/v1/firewall/toggle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enable }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Bật/tắt tường lửa thất bại')
+  return getFirewallStatus()
+}
+
+// --- Nginx & Web Proxy ---
+export async function getNginxStatus(): Promise<NginxStatus> {
+  const res = await fetchWithAuth('/api/v1/nginx/status')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải trạng thái Nginx')
+  return json.data
+}
+
+export async function getNginxSites(): Promise<NginxSite[]> {
+  const res = await fetchWithAuth('/api/v1/nginx/sites')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải danh sách sites Nginx')
+  return json.data || []
+}
+
+export async function getNginxSiteContent(name: string): Promise<{ name: string; content: string; enabled: boolean }> {
+  const res = await fetchWithAuth(`/api/v1/nginx/sites/${encodeURIComponent(name)}`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải nội dung file cấu hình')
+  return json.data
+}
+
+export async function saveNginxSite(name: string, content: string): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/nginx/sites/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Lưu cấu hình site thất bại')
+}
+
+export async function toggleNginxSite(name: string, enable: boolean): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/nginx/sites/${encodeURIComponent(name)}/toggle`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enable }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Kích hoạt/tắt site thất bại')
+}
+
+export async function deleteNginxSite(name: string): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/nginx/sites/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Xóa site thất bại')
+}
+
+export async function testNginxConfig(): Promise<{ success: boolean; output: string }> {
+  const res = await fetchWithAuth('/api/v1/nginx/test', {
+    method: 'POST',
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Kiểm tra cú pháp thất bại')
+  return json.data
+}
+
+export async function reloadNginx(): Promise<void> {
+  const res = await fetchWithAuth('/api/v1/nginx/reload', {
+    method: 'POST',
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Nạp lại cấu hình Nginx thất bại')
+}
+
+// --- Tailscale & Remote Info ---
+export async function getTailscaleInfo(): Promise<TailscaleInfo> {
+  try {
+    const res = await fetchWithAuth('/api/v1/system/tailscale')
+    const json = await res.json()
+    if (!res.ok) return { connected: false, ip: '', hostname: '', peers: [], activePeers: 0 }
+    return json.data
+  } catch {
+    return { connected: false, ip: '', hostname: '', peers: [], activePeers: 0 }
+  }
+}
+
+export async function getServerInfo(): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth('/api/v1/system/info')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message || 'Không thể tải thông tin máy chủ')
+  return json.data
+}
+
+// Aliases for convenient imports
+export const deletePath = deleteFileOrFolder
+export const renamePath = renameFileOrFolder
+export const saveNginxSiteContent = saveNginxSite
+export const downloadFileUrl = (path: string) => buildApiUrl(`/api/v1/files/download?path=${encodeURIComponent(path)}`)
