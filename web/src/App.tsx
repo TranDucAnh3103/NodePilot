@@ -21,6 +21,7 @@ import { TerminalView } from './views/TerminalView'
 import { FirewallView } from './views/FirewallView'
 import { NginxView } from './views/NginxView'
 import { transition } from './lib/motion'
+import { isUserRoot, canUserViewTab } from './lib/permissions'
 
 export function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
@@ -156,6 +157,34 @@ export function App() {
     setActiveAlerts([])
   }
 
+  // Guard navigation against unauthorized tab access
+  const handleTabChange = (tab: string) => {
+    if (tab === 'settings' && !isUserRoot(currentUser)) {
+      setCurrentTab('overview')
+      return
+    }
+    if ((tab === 'terminal' || tab === 'firewall' || tab === 'nginx') && !isUserRoot(currentUser)) {
+      if (!canUserViewTab(currentUser, tab)) {
+        setCurrentTab('overview')
+        return
+      }
+    }
+    if (!canUserViewTab(currentUser, tab)) {
+      setCurrentTab('overview')
+      return
+    }
+    setCurrentTab(tab)
+  }
+
+  // Auto-redirect if tab is changed or restricted while user is not root
+  useEffect(() => {
+    if (currentUser && !isUserRoot(currentUser)) {
+      if (currentTab === 'settings' || !canUserViewTab(currentUser, currentTab)) {
+        setCurrentTab('overview')
+      }
+    }
+  }, [currentUser, currentTab])
+
   if (isInitializing) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 text-sm">
@@ -213,7 +242,7 @@ export function App() {
       <div className="flex-1 flex overflow-hidden">
         <Sidebar
           currentTab={currentTab}
-          onTabChange={setCurrentTab}
+          onTabChange={handleTabChange}
           currentUser={currentUser}
           isMobileOpen={isMobileMenuOpen}
           onCloseMobile={() => setIsMobileMenuOpen(false)}
@@ -234,7 +263,8 @@ export function App() {
                     snapshot={snapshot}
                     cpuHistory={cpuHistory}
                     netHistory={netHistory}
-                    onNavigate={(tab) => setCurrentTab(tab)}
+                    currentUser={currentUser}
+                    onNavigate={handleTabChange}
                   />
                 )}
                 {currentTab === 'system' && (
@@ -242,7 +272,8 @@ export function App() {
                     snapshot={snapshot}
                     cpuHistory={cpuHistory}
                     netHistory={netHistory}
-                    onNavigate={(tab) => setCurrentTab(tab)}
+                    currentUser={currentUser}
+                    onNavigate={handleTabChange}
                   />
                 )}
                 {currentTab === 'terminal' && <TerminalView currentUser={currentUser} />}
@@ -254,7 +285,7 @@ export function App() {
                 {currentTab === 'tasks' && <TasksView currentUser={currentUser} />}
                 {currentTab === 'files' && <FilesView currentUser={currentUser} />}
                 {currentTab === 'audit' && <AuditView />}
-                {currentTab === 'settings' && <SettingsView currentUser={currentUser} />}
+                {currentTab === 'settings' && isUserRoot(currentUser) && <SettingsView currentUser={currentUser} />}
               </motion.div>
             </AnimatePresence>
           </div>

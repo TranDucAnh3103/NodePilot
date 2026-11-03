@@ -69,6 +69,10 @@ func (u *User) CanEditTab(tab string) bool {
 	if u.IsRoot() {
 		return true
 	}
+	// Settings tab is strictly reserved for root users under all circumstances
+	if strings.EqualFold(tab, "settings") {
+		return false
+	}
 	if u.Permissions == nil {
 		return false
 	}
@@ -86,6 +90,10 @@ func (u *User) CanViewTab(tab string) bool {
 	}
 	if u.IsRoot() {
 		return true
+	}
+	// Settings tab is strictly reserved for root users under all circumstances
+	if strings.EqualFold(tab, "settings") {
+		return false
 	}
 	if u.Permissions == nil {
 		return false

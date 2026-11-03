@@ -22,6 +22,8 @@ export function isUserRoot(user: User | null | undefined): boolean {
 export function canUserEditTab(user: User | null | undefined, tabName: string): boolean {
   if (!user) return false
   if (isUserRoot(user)) return true
+  // 'settings' is strictly reserved for root users under all circumstances
+  if (tabName === 'settings') return false
   const editTabs = user.permissions?.editTabs || []
   return editTabs.includes(tabName)
 }
@@ -32,6 +34,9 @@ export function canUserEditTab(user: User | null | undefined, tabName: string): 
 export function canUserViewTab(user: User | null | undefined, tabName: string): boolean {
   if (!user) return false
   if (isUserRoot(user)) return true
+  // 'settings' is strictly reserved for root users under all circumstances
+  if (tabName === 'settings') return false
+
   const viewTabs = user.permissions?.viewTabs
   if (!viewTabs || viewTabs.length === 0) {
     // Default safe view tabs for viewers

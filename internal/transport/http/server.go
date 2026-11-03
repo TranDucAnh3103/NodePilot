@@ -173,9 +173,9 @@ func (s *Server) setupRoutes() {
 		})
 	})
 
-	// Register Auth Routes
+	// Register Auth Routes (Root-only protected)
 	authH := authTransport.NewAuthHandler(s.authSvc, s.cfg)
-	authH.RegisterRoutes(api, authMiddleware)
+	authH.RegisterRoutes(api, authMiddleware, s.requireRoot())
 
 	// Register System Routes (History, Processes, Alerts, Power-status)
 	updateSvc := systemInfra.NewUpdateService(s.cfg, s.db)
@@ -263,6 +263,37 @@ func (s *Server) setupRoutes() {
 				return c.Send(indexData)
 			},
 		}))
+	}
+}
+
+func (s *Server) requireRoot() fiber.Handler {
+	return func(c fiber.Ctx) error {
+		userID, _ := c.Locals("userId").(string)
+		username, _ := c.Locals("username").(string)
+		role, _ := c.Locals("role").(string)
+
+		// Root / Admin / Primary admin accounts always bypass
+		if strings.EqualFold(role, "root") || strings.EqualFold(role, "admin") ||
+			username == "stephen3103" || username == "tranducanh31032006@gmail.com" || username == "piganh408@gmail.com" {
+			return c.Next()
+		}
+
+		// Non-root: verify role from database
+		if s.authSvc != nil && userID != "" {
+			user, err := s.authSvc.GetMe(c.Context(), userID)
+			if err == nil && user != nil && user.IsRoot() {
+				return c.Next()
+			}
+		}
+
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"data": nil,
+			"error": fiber.Map{
+				"code":    "PERMISSION_DENIED",
+				"message": "Chỉ tài khoản ROOT mới có quyền truy cập hoặc thực hiện thao tác quản trị cài đặt & phân quyền hệ thống.",
+			},
+			"meta": fiber.Map{"requestId": c.Locals(string(logging.RequestIDKey))},
+		})
 	}
 }
 
