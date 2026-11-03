@@ -85,7 +85,7 @@ func (h *WorkloadsHandler) ExecuteContainerAction(c fiber.Ctx) error {
 	if err := c.Bind().JSON(&req); err != nil || req.Operation == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"data":  nil,
-			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "Operation is required (start, stop, restart)"},
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "Operation is required (start, stop, restart, delete)"},
 			"meta":  fiber.Map{"requestId": c.Locals(string(logging.RequestIDKey))},
 		})
 	}
@@ -178,15 +178,16 @@ func (h *WorkloadsHandler) ExecuteServiceAction(c fiber.Ctx) error {
 	if err := c.Bind().JSON(&req); err != nil || req.Operation == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"data":  nil,
-			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "Operation is required (restart)"},
+			"error": fiber.Map{"code": "INVALID_REQUEST", "message": "Operation is required (start, stop, restart)"},
 			"meta":  fiber.Map{"requestId": c.Locals(string(logging.RequestIDKey))},
 		})
 	}
 
-	if !strings.EqualFold(req.Operation, "restart") {
+	op := strings.ToLower(strings.TrimSpace(req.Operation))
+	if op != "start" && op != "stop" && op != "restart" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"data":  nil,
-			"error": fiber.Map{"code": "INVALID_OPERATION", "message": "Only restart operation is allowed for services"},
+			"error": fiber.Map{"code": "INVALID_OPERATION", "message": "Supported service operations are start, stop, restart"},
 			"meta":  fiber.Map{"requestId": c.Locals(string(logging.RequestIDKey))},
 		})
 	}

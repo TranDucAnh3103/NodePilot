@@ -219,7 +219,7 @@ export async function getContainerLogs(id: string, tail: number = 200): Promise<
 
 export async function executeContainerAction(
   name: string,
-  operation: 'start' | 'stop' | 'restart',
+  operation: 'start' | 'stop' | 'restart' | 'delete' | 'remove',
   reason: string,
   idempotencyKey: string,
   project?: string
@@ -236,6 +236,16 @@ export async function executeContainerAction(
   const json = await res.json()
   if (!res.ok) {
     throw new Error(json.error?.message || `Thao tác ${operation} thất bại`)
+  }
+}
+
+export async function killProcess(pid: number): Promise<void> {
+  const res = await fetchWithAuth(`/api/v1/system/processes/${pid}/kill`, {
+    method: 'POST',
+  })
+  const json = await res.json()
+  if (!res.ok) {
+    throw new Error(json.error?.message || `Không thể dừng tiến trình PID ${pid}`)
   }
 }
 

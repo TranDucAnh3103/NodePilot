@@ -14,15 +14,20 @@ import {
   Clock,
   HardDrive,
   Cpu,
+  Trash2,
 } from 'lucide-react'
 import { spring, transition } from '../lib/motion'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { LogModal } from '../components/LogModal'
 import { Pagination } from '../components/Pagination'
-import { Container } from '../types'
+import { Container, User } from '../types'
 import { getContainers, getContainerLogs, executeContainerAction } from '../lib/api'
 
-export const WorkloadsView: React.FC = () => {
+interface WorkloadsViewProps {
+  currentUser?: User | null
+}
+
+export const WorkloadsView: React.FC<WorkloadsViewProps> = ({ currentUser }) => {
   const [containers, setContainers] = useState<Container[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
@@ -40,7 +45,7 @@ export const WorkloadsView: React.FC = () => {
   // Confirmation modal state
   const [activeModal, setActiveModal] = useState<{
     target: Container
-    action: 'start' | 'stop' | 'restart' | 'kill'
+    action: 'start' | 'stop' | 'restart' | 'kill' | 'delete' | 'remove'
   } | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
 
@@ -78,7 +83,7 @@ export const WorkloadsView: React.FC = () => {
     return true
   })
 
-  const handleActionClick = (container: Container, action: 'start' | 'stop' | 'restart' | 'kill') => {
+  const handleActionClick = (container: Container, action: 'start' | 'stop' | 'restart' | 'kill' | 'delete' | 'remove') => {
     setActionError(null)
     setActiveModal({ target: container, action })
   }
@@ -93,7 +98,7 @@ export const WorkloadsView: React.FC = () => {
       const op = activeModal.action === 'kill' ? 'stop' : activeModal.action
       await executeContainerAction(
         activeModal.target.name,
-        op as 'start' | 'stop' | 'restart',
+        op,
         'Thao tác qua giao diện NodePilot HSCC',
         idempotencyKey,
         activeModal.target.project
@@ -236,6 +241,11 @@ export const WorkloadsView: React.FC = () => {
           const portStrings = (container.ports || []).map((p) =>
             p.publicPort ? `${p.publicPort}:${p.privatePort}/${p.type}` : `${p.privatePort}/${p.type}`
           )
+          const isRoot =
+            currentUser?.role === 'root' ||
+            currentUser?.role === 'admin' ||
+            currentUser?.username === 'stephen3103'
+          const canMutate = !container.isProtected && (isRoot || container.isAllowlisted)
 
           return (
             <motion.div
@@ -265,10 +275,10 @@ export const WorkloadsView: React.FC = () => {
                         <ShieldAlert className="w-3 h-3" />
                         Denylist (Bảo vệ hệ thống)
                       </span>
-                    ) : container.isAllowlisted ? (
+                    ) : canMutate ? (
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/20 flex items-center gap-1">
                         <ShieldCheck className="w-3 h-3" />
-                        Allowlist (Cho phép mutate)
+                        {isRoot ? 'Được phép điều khiển (Root)' : 'Allowlist (Cho phép mutate)'}
                       </span>
                     ) : (
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700/60">
@@ -318,7 +328,7 @@ export const WorkloadsView: React.FC = () => {
 
                   {/* Action buttons */}
                   <div className="flex items-center space-x-1.5">
-                    {container.isAllowlisted && !container.isProtected ? (
+                    {canMutate ? (
                       <>
                         {isRunning ? (
                           <>
@@ -352,10 +362,19 @@ export const WorkloadsView: React.FC = () => {
                             <Play className="w-4 h-4" />
                           </motion.button>
                         )}
+                        <motion.button
+                          whileTap={{ scale: 0.95 }}
+                          transition={spring.press}
+                          onClick={() => handleActionClick(container, 'delete')}
+                          className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                          title="Xóa container (Delete)"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </motion.button>
                       </>
                     ) : (
                       <div className="text-[11px] text-slate-500 italic px-2 py-1 bg-slate-950/60 rounded-lg border border-slate-800">
-                        {container.isProtected ? 'Bảo vệ hệ thống' : 'Thao tác bị khóa bởi chính sách'}
+                        {container.isProtected ? 'Bảo vệ hệ thống' : 'Chỉ xem'}
                       </div>
                     )}
                   </div>
@@ -387,7 +406,15 @@ export const WorkloadsView: React.FC = () => {
       {activeModal && (
         <ConfirmModal
           isOpen={true}
-          title={`Xác nhận thao tác: ${activeModal.action.toUpperCase()}`}
+          title={`Xác nhận thao tác: ${
+            activeModal.action === 'delete' || activeModal.action === 'remove'
+              ? 'XÓA CONTAINER'
+              : activeModal.action === 'stop'
+              ? 'DỪNG CONTAINER (STOP)'
+              : activeModal.action === 'restart'
+              ? 'KHỞI ĐỘNG LẠI (RESTART)'
+              : activeModal.action.toUpperCase()
+          }`}
           targetName={activeModal.target.name}
           actionType={activeModal.action}
           isProcessing={isProcessing}

@@ -9,21 +9,38 @@ import {
   AlertCircle,
   Hash,
   Terminal,
+  Square,
+  Lock,
 } from 'lucide-react'
 import { spring, transition } from '../lib/motion'
 import { Pagination } from '../components/Pagination'
-import { ProcessInfo } from '../types'
-import { getProcesses } from '../lib/api'
+import { ConfirmModal } from '../components/ConfirmModal'
+import { ProcessInfo, User } from '../types'
+import { getProcesses, killProcess } from '../lib/api'
 
-export const ProcessesView: React.FC = () => {
+interface ProcessesViewProps {
+  currentUser?: User | null
+}
+
+export const ProcessesView: React.FC<ProcessesViewProps> = ({ currentUser }) => {
   const [processes, setProcesses] = useState<ProcessInfo[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [sortBy, setSortBy] = useState<'cpu' | 'memory' | 'pid'>('cpu')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [currentPage, setCurrentPage] = useState<number>(1)
   const pageSize = 12
+
+  // Kill confirmation modal state
+  const [activeModal, setActiveModal] = useState<ProcessInfo | null>(null)
+  const [isProcessing, setIsProcessing] = useState(false)
+
+  const isRoot =
+    currentUser?.role === 'root' ||
+    currentUser?.role === 'admin' ||
+    currentUser?.username === 'stephen3103'
 
   useEffect(() => {
     setCurrentPage(1)
@@ -46,6 +63,22 @@ export const ProcessesView: React.FC = () => {
   useEffect(() => {
     loadProcesses()
   }, [loadProcesses])
+
+  const handleKillProcess = async () => {
+    if (!activeModal) return
+    setIsProcessing(true)
+    setActionError(null)
+    try {
+      await killProcess(activeModal.pid)
+      await loadProcesses()
+      setActiveModal(null)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Không thể kết thúc tiến trình'
+      setActionError(msg)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
 
   const formatBytes = (bytes: number) => {
     if (bytes <= 0) return '0 B'
@@ -99,14 +132,22 @@ export const ProcessesView: React.FC = () => {
             <h2 className="text-lg font-bold text-slate-100">Khám Phá Tiến Trình Hệ Thống (Process Explorer)</h2>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Quan sát 100% tiến trình chạy trên toàn bộ hệ điều hành. Chế độ chỉ đọc an toàn tuyệt đối (Không cho phép kill PID tùy ý).
+            {isRoot
+              ? 'Quan sát 100% tiến trình chạy trên toàn bộ hệ điều hành. Quyền Root cho phép dừng (kill) tiến trình ngoại trừ PID 1 và HSCC.'
+              : 'Quan sát 100% tiến trình chạy trên toàn bộ hệ điều hành. Chế độ chỉ đọc an toàn tuyệt đối (Không cho phép kill PID tùy ý).'}
           </p>
         </div>
 
         <div className="flex items-center space-x-3 text-xs font-mono">
-          <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-            <ShieldCheck className="w-3.5 h-3.5" /> Read-Only Safe
-          </span>
+          {isRoot ? (
+            <span className="px-2.5 py-1 rounded-lg bg-teal-500/10 text-teal-400 border border-teal-500/20 flex items-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5" /> Quyền Root (Cho phép dừng)
+            </span>
+          ) : (
+            <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5" /> Read-Only Safe
+            </span>
+          )}
           <button
             onClick={loadProcesses}
             disabled={isLoading}
@@ -117,6 +158,14 @@ export const ProcessesView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Action Error Alert */}
+      {actionError && (
+        <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-center space-x-3 text-xs text-rose-400">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span>{actionError}</span>
+        </div>
+      )}
 
       {/* Filter and Sorter Bar */}
       <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
@@ -179,30 +228,53 @@ export const ProcessesView: React.FC = () => {
                 <th className="py-3 px-4">CPU (%)</th>
                 <th className="py-3 px-4">RAM (RSS)</th>
                 <th className="py-3 px-4">Lệnh thực thi</th>
+                {isRoot && <th className="py-3 px-4 text-right">Thao tác</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
-              {filteredProcesses.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((p) => (
-                <tr key={p.pid} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="py-3 px-4 text-indigo-400 font-bold">{p.pid}</td>
-                  <td className="py-3 px-4 text-slate-200 font-medium whitespace-nowrap">{p.name}</td>
-                  <td className="py-3 px-4 whitespace-nowrap">{getCategoryBadge(p.category)}</td>
-                  <td className="py-3 px-4 text-slate-400 whitespace-nowrap">{p.username || 'system'}</td>
-                  <td className="py-3 px-4 text-slate-300">
-                    <span className={p.cpuPercent > 10 ? 'text-amber-400 font-bold' : ''}>
-                      {p.cpuPercent.toFixed(1)}%
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-slate-300 whitespace-nowrap">{formatBytes(p.memoryBytes)}</td>
-                  <td className="py-3 px-4 text-slate-500 max-w-xs truncate" title={p.commandLine}>
-                    {p.commandLine || p.name}
-                  </td>
-                </tr>
-              ))}
+              {filteredProcesses.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((p) => {
+                const isProtectedPid = p.pid === 1 || p.name.includes('hscc')
+                return (
+                  <tr key={p.pid} className="hover:bg-slate-800/40 transition-colors">
+                    <td className="py-3 px-4 text-indigo-400 font-bold">{p.pid}</td>
+                    <td className="py-3 px-4 text-slate-200 font-medium whitespace-nowrap">{p.name}</td>
+                    <td className="py-3 px-4 whitespace-nowrap">{getCategoryBadge(p.category)}</td>
+                    <td className="py-3 px-4 text-slate-400 whitespace-nowrap">{p.username || 'system'}</td>
+                    <td className="py-3 px-4 text-slate-300">
+                      <span className={p.cpuPercent > 10 ? 'text-amber-400 font-bold' : ''}>
+                        {p.cpuPercent.toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-slate-300 whitespace-nowrap">{formatBytes(p.memoryBytes)}</td>
+                    <td className="py-3 px-4 text-slate-500 max-w-xs truncate" title={p.commandLine}>
+                      {p.commandLine || p.name}
+                    </td>
+                    {isRoot && (
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        {isProtectedPid ? (
+                          <span className="text-[10px] text-slate-500 italic px-2 py-0.5 rounded bg-slate-950/60 border border-slate-800 flex items-center gap-1 inline-flex">
+                            <Lock className="w-2.5 h-2.5" /> Khóa
+                          </span>
+                        ) : (
+                          <motion.button
+                            whileTap={{ scale: 0.95 }}
+                            transition={spring.press}
+                            onClick={() => setActiveModal(p)}
+                            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                            title={`Dừng tiến trình PID ${p.pid}`}
+                          >
+                            <Square className="w-3.5 h-3.5" />
+                          </motion.button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
 
               {!isLoading && filteredProcesses.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500 text-xs">
+                  <td colSpan={isRoot ? 8 : 7} className="py-12 text-center text-slate-500 text-xs">
                     Không tìm thấy tiến trình nào phù hợp.
                   </td>
                 </tr>
@@ -222,6 +294,22 @@ export const ProcessesView: React.FC = () => {
           />
         )}
       </div>
+
+      {/* Kill Process Confirmation Modal */}
+      {activeModal && (
+        <ConfirmModal
+          isOpen={true}
+          title={`XÁC NHẬN DỪNG TIẾN TRÌNH (KILL PID ${activeModal.pid})`}
+          targetName={`${activeModal.name} (PID: ${activeModal.pid})`}
+          actionType="kill"
+          isProcessing={isProcessing}
+          onConfirm={handleKillProcess}
+          onCancel={() => {
+            setActiveModal(null)
+            setActionError(null)
+          }}
+        />
+      )}
     </motion.div>
   )
 }

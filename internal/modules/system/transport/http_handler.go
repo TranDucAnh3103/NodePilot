@@ -2,6 +2,8 @@ package transport
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -47,6 +49,7 @@ func (h *SystemHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber
 	sysGroup.Get("/history", h.History)
 	sysGroup.Get("/history/series", h.HistorySeries)
 	sysGroup.Get("/processes", h.Processes)
+	sysGroup.Post("/processes/:pid/kill", h.KillProcess)
 	sysGroup.Get("/power-status", h.PowerStatus)
 	sysGroup.Get("/tailscale", h.Tailscale)
 	sysGroup.Get("/info", h.ServerInfo)
@@ -84,6 +87,59 @@ func (h *SystemHandler) Processes(c fiber.Ctx) error {
 		"data":  procs,
 		"error": nil,
 		"meta":  fiber.Map{"requestId": getReqID(c), "count": len(procs)},
+	})
+}
+
+func (h *SystemHandler) KillProcess(c fiber.Ctx) error {
+	role, _ := c.Locals("role").(string)
+	user, _ := c.Locals("username").(string)
+	if role != "root" && role != "admin" && user != "stephen3103" && user != "tranducanh31032006@gmail.com" {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "FORBIDDEN", "message": "Chỉ tài khoản Root mới có quyền dừng tiến trình máy chủ"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	pid, err := strconv.Atoi(c.Params("pid"))
+	if err != nil || pid <= 1 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "INVALID_PID", "message": "PID không hợp lệ hoặc không thể dừng tiến trình PID 1"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	if pid == os.Getpid() {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "PROTECTED_PROCESS", "message": "Không thể dừng tiến trình điều khiển HSCC đang chạy"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "PROCESS_NOT_FOUND", "message": "Không tìm thấy tiến trình"},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	err = proc.Kill()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"data":  nil,
+			"error": fiber.Map{"code": "KILL_FAILED", "message": fmt.Sprintf("Không thể dừng tiến trình: %v", err)},
+			"meta":  fiber.Map{"requestId": getReqID(c)},
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"data":  fiber.Map{"pid": pid, "killed": true},
+		"error": nil,
+		"meta":  fiber.Map{"requestId": getReqID(c)},
 	})
 }
 

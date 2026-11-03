@@ -248,9 +248,9 @@ export function App() {
                 {currentTab === 'terminal' && <TerminalView />}
                 {currentTab === 'firewall' && <FirewallView />}
                 {currentTab === 'nginx' && <NginxView />}
-                {currentTab === 'docker' && <WorkloadsView />}
-                {currentTab === 'services' && <ServicesView />}
-                {currentTab === 'processes' && <ProcessesView />}
+                {currentTab === 'docker' && <WorkloadsView currentUser={currentUser} />}
+                {currentTab === 'services' && <ServicesView currentUser={currentUser} />}
+                {currentTab === 'processes' && <ProcessesView currentUser={currentUser} />}
                 {currentTab === 'tasks' && <TasksView />}
                 {currentTab === 'files' && <FilesView />}
                 {currentTab === 'audit' && <AuditView />}
