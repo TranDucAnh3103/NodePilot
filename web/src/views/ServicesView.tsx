@@ -19,6 +19,7 @@ import { LogModal } from '../components/LogModal'
 import { Pagination } from '../components/Pagination'
 import { ServiceUnit, User } from '../types'
 import { getServices, getServiceLogs, executeServiceAction } from '../lib/api'
+import { isUserRoot, canUserEditTab } from '../lib/permissions'
 
 interface ServicesViewProps {
   currentUser?: User | null
@@ -65,6 +66,9 @@ export const ServicesView: React.FC<ServicesViewProps> = ({ currentUser }) => {
   useEffect(() => {
     fetchServicesList()
   }, [fetchServicesList])
+
+  const isRoot = isUserRoot(currentUser)
+  const canEdit = canUserEditTab(currentUser, 'services')
 
   const filteredServices = services.filter((s) => {
     const matchesSearch =
@@ -232,11 +236,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({ currentUser }) => {
         {filteredServices.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((service) => {
           const isActive = service.activeState === 'active'
           const isProtected = service.isProtected || service.category === 'core_protected'
-          const isRoot =
-            currentUser?.role === 'root' ||
-            currentUser?.role === 'admin' ||
-            currentUser?.username === 'stephen3103'
-          const canMutate = !isProtected && (isRoot || service.isAllowlisted)
+          const canMutate = !isProtected && (isRoot || (canEdit && service.isAllowlisted))
 
           return (
             <motion.div
@@ -272,7 +272,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({ currentUser }) => {
                     ) : canMutate ? (
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/20 flex items-center gap-1">
                         <ShieldCheck className="w-3 h-3" />
-                        {isRoot ? 'Được phép điều khiển (Root)' : 'Allowlist (Cho phép mutate)'}
+                        {isRoot ? 'Được phép điều khiển (Root)' : 'Được cấp quyền điều khiển'}
                       </span>
                     ) : (
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700/60">

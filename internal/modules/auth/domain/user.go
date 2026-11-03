@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -59,6 +60,42 @@ func (u *User) CanEdit() bool {
 		return false
 	}
 	return u.IsRoot() || u.Role == RoleUser || u.Role == RoleOperator
+}
+
+func (u *User) CanEditTab(tab string) bool {
+	if u == nil {
+		return false
+	}
+	if u.IsRoot() {
+		return true
+	}
+	if u.Permissions == nil {
+		return false
+	}
+	for _, t := range u.Permissions.EditTabs {
+		if strings.EqualFold(t, tab) {
+			return true
+		}
+	}
+	return false
+}
+
+func (u *User) CanViewTab(tab string) bool {
+	if u == nil {
+		return false
+	}
+	if u.IsRoot() {
+		return true
+	}
+	if u.Permissions == nil {
+		return false
+	}
+	for _, t := range u.Permissions.ViewTabs {
+		if strings.EqualFold(t, tab) {
+			return true
+		}
+	}
+	return false
 }
 
 type Session struct {

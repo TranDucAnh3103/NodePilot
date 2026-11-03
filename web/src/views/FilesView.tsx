@@ -26,7 +26,8 @@ import {
   Info,
 } from 'lucide-react'
 import { spring, transition } from '../lib/motion'
-import { FileItem, FileContent, Bookmark } from '../types'
+import { FileItem, FileContent, Bookmark, User } from '../types'
+import { canUserEditTab } from '../lib/permissions'
 import {
   listFiles,
   getFileContent,
@@ -40,7 +41,12 @@ import {
   getFileBookmarks,
 } from '../lib/api'
 
-export const FilesView: React.FC = () => {
+interface FilesViewProps {
+  currentUser?: User | null
+}
+
+export const FilesView: React.FC<FilesViewProps> = ({ currentUser }) => {
+  const canEdit = canUserEditTab(currentUser, 'files')
   const [currentPath, setCurrentPath] = useState<string>('/home/stephen')
   const [items, setItems] = useState<FileItem[]>([])
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
@@ -277,43 +283,51 @@ export const FilesView: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleUploadFileChange}
-            className="hidden"
-          />
+          {canEdit ? (
+            <>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleUploadFileChange}
+                className="hidden"
+              />
 
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            transition={spring.press}
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold cursor-pointer border border-slate-700 transition-colors"
-          >
-            <Upload className={`w-3.5 h-3.5 text-teal-400 ${isUploading ? 'animate-bounce' : ''}`} />
-            <span>{isUploading ? 'Đang tải lên...' : 'Tải lên tệp'}</span>
-          </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                transition={spring.press}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold cursor-pointer border border-slate-700 transition-colors"
+              >
+                <Upload className={`w-3.5 h-3.5 text-teal-400 ${isUploading ? 'animate-bounce' : ''}`} />
+                <span>{isUploading ? 'Đang tải lên...' : 'Tải lên tệp'}</span>
+              </motion.button>
 
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            transition={spring.press}
-            onClick={() => setIsNewFolderOpen(true)}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold cursor-pointer border border-slate-700 transition-colors"
-          >
-            <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
-            <span>Thư mục mới</span>
-          </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                transition={spring.press}
+                onClick={() => setIsNewFolderOpen(true)}
+                className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold cursor-pointer border border-slate-700 transition-colors"
+              >
+                <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
+                <span>Thư mục mới</span>
+              </motion.button>
 
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            transition={spring.press}
-            onClick={() => setIsNewFileOpen(true)}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-lg shadow-indigo-600/20 transition-colors"
-          >
-            <FilePlus className="w-4 h-4" />
-            <span>Tệp mới</span>
-          </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                transition={spring.press}
+                onClick={() => setIsNewFileOpen(true)}
+                className="flex items-center space-x-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-lg shadow-indigo-600/20 transition-colors"
+              >
+                <FilePlus className="w-4 h-4" />
+                <span>Tệp mới</span>
+              </motion.button>
+            </>
+          ) : (
+            <span className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs font-mono flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-teal-400" /> Chế độ chỉ xem (Read-only)
+            </span>
+          )}
         </div>
       </div>
 
@@ -520,7 +534,7 @@ export const FilesView: React.FC = () => {
                             <button
                               onClick={() => handleOpenFile(item.relPath)}
                               className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer"
-                              title="Sửa tệp"
+                              title={canEdit ? "Sửa tệp" : "Xem nội dung tệp"}
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
@@ -534,23 +548,27 @@ export const FilesView: React.FC = () => {
                             </a>
                           </>
                         )}
-                        <button
-                          onClick={() => {
-                            setItemToRename(item)
-                            setRenameTargetName(item.name)
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors cursor-pointer"
-                          title="Đổi tên"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setItemToDelete(item)}
-                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-                          title="Xóa"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {canEdit && (
+                          <>
+                            <button
+                              onClick={() => {
+                                setItemToRename(item)
+                                setRenameTargetName(item.name)
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors cursor-pointer"
+                              title="Đổi tên"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setItemToDelete(item)}
+                              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                              title="Xóa"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -591,9 +609,12 @@ export const FilesView: React.FC = () => {
               <div className="mt-4 flex-1 flex flex-col min-h-0">
                 <textarea
                   value={editorContent}
-                  onChange={(e) => setEditorContent(e.target.value)}
+                  onChange={(e) => canEdit && setEditorContent(e.target.value)}
+                  readOnly={!canEdit}
                   rows={20}
-                  className="w-full flex-1 p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-indigo-200 focus:outline-none focus:border-indigo-500 resize-none font-normal leading-relaxed"
+                  className={`w-full flex-1 p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-indigo-200 focus:outline-none focus:border-indigo-500 resize-none font-normal leading-relaxed ${
+                    !canEdit ? 'opacity-85 select-text cursor-default' : ''
+                  }`}
                   spellCheck={false}
                 />
               </div>
@@ -602,6 +623,7 @@ export const FilesView: React.FC = () => {
                 <span className="text-[11px] text-slate-500 font-mono">
                   Dung lượng: {formatBytes(editingFile.size)} • SHA256:{' '}
                   {editingFile.sha256 ? editingFile.sha256.substring(0, 12) + '...' : 'none'}
+                  {!canEdit && ' • Chế độ chỉ đọc'}
                 </span>
                 <div className="flex items-center space-x-2">
                   <button
@@ -611,14 +633,16 @@ export const FilesView: React.FC = () => {
                   >
                     Đóng
                   </button>
-                  <button
-                    type="button"
-                    disabled={isSaving}
-                    onClick={handleSave}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-lg shadow-indigo-600/20"
-                  >
-                    {isSaving ? 'Đang lưu...' : 'Lưu tệp'}
-                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={handleSave}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-lg shadow-indigo-600/20"
+                    >
+                      {isSaving ? 'Đang lưu...' : 'Lưu tệp'}
+                    </button>
+                  )}
                 </div>
               </div>
             </motion.div>

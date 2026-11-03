@@ -19,7 +19,7 @@ import {
   Power,
   ShieldCheck,
 } from 'lucide-react'
-import { NginxStatus, NginxSite } from '../types'
+import { NginxStatus, NginxSite, User } from '../types'
 import {
   getNginxStatus,
   getNginxSites,
@@ -31,8 +31,14 @@ import {
   reloadNginx,
 } from '../lib/api'
 import { spring, transition } from '../lib/motion'
+import { canUserEditTab } from '../lib/permissions'
 
-export const NginxView: React.FC = () => {
+interface NginxViewProps {
+  currentUser?: User | null
+}
+
+export const NginxView: React.FC<NginxViewProps> = ({ currentUser }) => {
+  const canEdit = canUserEditTab(currentUser, 'nginx')
   const [status, setStatus] = useState<NginxStatus | null>(null)
   const [sites, setSites] = useState<NginxSite[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -259,26 +265,30 @@ export const NginxView: React.FC = () => {
             <span>{isTesting ? 'Đang test...' : 'Kiểm tra cú pháp (nginx -t)'}</span>
           </motion.button>
 
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            transition={spring.press}
-            onClick={handleReload}
-            disabled={isReloading}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-teal-600/20 border border-teal-500/30 hover:bg-teal-600/30 text-teal-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
-          >
-            <RotateCw className={`w-3.5 h-3.5 ${isReloading ? 'animate-spin' : ''}`} />
-            <span>Tải lại Nginx (Reload)</span>
-          </motion.button>
+          {canEdit && (
+            <>
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                transition={spring.press}
+                onClick={handleReload}
+                disabled={isReloading}
+                className="flex items-center space-x-1.5 px-3 py-2 bg-teal-600/20 border border-teal-500/30 hover:bg-teal-600/30 text-teal-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${isReloading ? 'animate-spin' : ''}`} />
+                <span>Tải lại Nginx (Reload)</span>
+              </motion.button>
 
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            transition={spring.press}
-            onClick={() => setIsCreateOpen(true)}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-lg shadow-indigo-600/20 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Thêm Virtual Host mới</span>
-          </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                transition={spring.press}
+                onClick={() => setIsCreateOpen(true)}
+                className="flex items-center space-x-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-lg shadow-indigo-600/20 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Thêm Virtual Host mới</span>
+              </motion.button>
+            </>
+          )}
         </div>
       </div>
 
@@ -411,35 +421,50 @@ export const NginxView: React.FC = () => {
                       {site.listenPort || <span className="text-slate-600">80</span>}
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={() => handleToggle(site)}
-                        className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold cursor-pointer border transition-colors ${
-                          site.enabled
-                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
-                            : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
-                        }`}
-                        title="Bấm để bật/tắt liên kết sites-enabled"
-                      >
-                        <Power className="w-3 h-3" />
-                        <span>{site.enabled ? 'ĐANG BẬT' : 'ĐÃ TẮT'}</span>
-                      </button>
+                      {canEdit ? (
+                        <button
+                          onClick={() => handleToggle(site)}
+                          className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold cursor-pointer border transition-colors ${
+                            site.enabled
+                              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
+                              : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+                          }`}
+                          title="Bấm để bật/tắt liên kết sites-enabled"
+                        >
+                          <Power className="w-3 h-3" />
+                          <span>{site.enabled ? 'ĐANG BẬT' : 'ĐÃ TẮT'}</span>
+                        </button>
+                      ) : (
+                        <span
+                          className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                            site.enabled
+                              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                              : 'bg-slate-800 text-slate-400 border-slate-700'
+                          }`}
+                        >
+                          <Power className="w-3 h-3" />
+                          <span>{site.enabled ? 'ĐANG BẬT' : 'ĐÃ TẮT'}</span>
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end space-x-1.5">
                         <button
                           onClick={() => handleOpenEdit(site)}
                           className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer"
-                          title="Sửa cấu hình"
+                          title={canEdit ? 'Sửa cấu hình' : 'Xem cấu hình'}
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={() => setSiteToDelete(site)}
-                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-                          title="Xóa cấu hình"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {canEdit && (
+                          <button
+                            onClick={() => setSiteToDelete(site)}
+                            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                            title="Xóa cấu hình"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -556,9 +581,12 @@ export const NginxView: React.FC = () => {
                 ) : (
                   <textarea
                     value={editorContent}
-                    onChange={(e) => setEditorContent(e.target.value)}
+                    onChange={(e) => canEdit && setEditorContent(e.target.value)}
+                    readOnly={!canEdit}
                     rows={18}
-                    className="w-full flex-1 p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-emerald-300 focus:outline-none focus:border-teal-500 resize-none font-normal leading-relaxed"
+                    className={`w-full flex-1 p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-emerald-300 focus:outline-none focus:border-teal-500 resize-none font-normal leading-relaxed ${
+                      !canEdit ? 'opacity-85 select-text cursor-default' : ''
+                    }`}
                     spellCheck={false}
                   />
                 )}
@@ -566,7 +594,9 @@ export const NginxView: React.FC = () => {
 
               <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between shrink-0">
                 <span className="text-[11px] text-slate-500">
-                  Lưu xong, hãy bấm "Kiểm tra cú pháp" và "Tải lại Nginx" để áp dụng.
+                  {canEdit
+                    ? 'Lưu xong, hãy bấm "Kiểm tra cú pháp" và "Tải lại Nginx" để áp dụng.'
+                    : 'Chế độ xem nội dung cấu hình (Chỉ đọc).'}
                 </span>
                 <div className="flex items-center space-x-2">
                   <button
@@ -574,16 +604,18 @@ export const NginxView: React.FC = () => {
                     onClick={() => setEditingSite(null)}
                     className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium cursor-pointer"
                   >
-                    Hủy
+                    Đóng
                   </button>
-                  <button
-                    type="button"
-                    disabled={isSaving || isLoadingContent}
-                    onClick={handleSaveContent}
-                    className="px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-lg shadow-teal-600/20"
-                  >
-                    {isSaving ? 'Đang lưu...' : 'Lưu cấu hình'}
-                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      disabled={isSaving || isLoadingContent}
+                      onClick={handleSaveContent}
+                      className="px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-lg shadow-teal-600/20"
+                    >
+                      {isSaving ? 'Đang lưu...' : 'Lưu cấu hình'}
+                    </button>
+                  )}
                 </div>
               </div>
             </motion.div>

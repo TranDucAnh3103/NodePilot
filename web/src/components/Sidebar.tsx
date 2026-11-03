@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { spring, transition } from '../lib/motion'
 import { User } from '../types'
+import { isUserRoot, canUserViewTab } from '../lib/permissions'
 
 interface SidebarProps {
   currentTab: string
@@ -45,11 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen = false,
   onCloseMobile,
 }) => {
-  const isRoot =
-    currentUser?.role === 'root' ||
-    currentUser?.role === 'admin' ||
-    currentUser?.username === 'stephen3103' ||
-    currentUser?.username === 'tranducanh31032006@gmail.com'
+  const isRoot = isUserRoot(currentUser)
 
   const sections: MenuSection[] = [
     {
@@ -82,7 +79,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const isItemVisible = (item: MenuItem) => {
     if (item.rootOnly && !isRoot) return false
-    return true
+    return canUserViewTab(currentUser, item.id)
   }
 
   const renderNavSection = (section: MenuSection, isDrawer = false) => {

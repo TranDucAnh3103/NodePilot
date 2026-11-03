@@ -34,17 +34,17 @@ func (h *Handler) requireRoot(c fiber.Ctx) error {
 	return nil
 }
 
-func (h *Handler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler) {
+func (h *Handler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler, editMiddleware fiber.Handler) {
 	group := router.Group("/nginx", authMiddleware)
 
 	group.Get("/status", h.GetStatus)
 	group.Get("/sites", h.ListSites)
 	group.Get("/sites/:name", h.GetSite)
-	group.Put("/sites/:name", h.SaveSite)
-	group.Post("/sites/:name/toggle", h.ToggleSite)
-	group.Delete("/sites/:name", h.DeleteSite)
+	group.Put("/sites/:name", editMiddleware, h.SaveSite)
+	group.Post("/sites/:name/toggle", editMiddleware, h.ToggleSite)
+	group.Delete("/sites/:name", editMiddleware, h.DeleteSite)
 	group.Post("/test", h.TestConfig)
-	group.Post("/reload", h.Reload)
+	group.Post("/reload", editMiddleware, h.Reload)
 }
 
 func (h *Handler) GetStatus(c fiber.Ctx) error {

@@ -17,6 +17,7 @@ import { Pagination } from '../components/Pagination'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { ProcessInfo, User } from '../types'
 import { getProcesses, killProcess } from '../lib/api'
+import { isUserRoot, canUserEditTab } from '../lib/permissions'
 
 interface ProcessesViewProps {
   currentUser?: User | null
@@ -37,10 +38,8 @@ export const ProcessesView: React.FC<ProcessesViewProps> = ({ currentUser }) => 
   const [activeModal, setActiveModal] = useState<ProcessInfo | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
 
-  const isRoot =
-    currentUser?.role === 'root' ||
-    currentUser?.role === 'admin' ||
-    currentUser?.username === 'stephen3103'
+  const isRoot = isUserRoot(currentUser)
+  const canEdit = canUserEditTab(currentUser, 'processes')
 
   useEffect(() => {
     setCurrentPage(1)
@@ -132,16 +131,16 @@ export const ProcessesView: React.FC<ProcessesViewProps> = ({ currentUser }) => 
             <h2 className="text-lg font-bold text-slate-100">Khám Phá Tiến Trình Hệ Thống (Process Explorer)</h2>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            {isRoot
-              ? 'Quan sát 100% tiến trình chạy trên toàn bộ hệ điều hành. Quyền Root cho phép dừng (kill) tiến trình ngoại trừ PID 1 và HSCC.'
+            {canEdit
+              ? 'Quan sát 100% tiến trình chạy trên toàn bộ hệ điều hành. Được phép buộc dừng (kill) tiến trình ngoại trừ PID 1 và HSCC.'
               : 'Quan sát 100% tiến trình chạy trên toàn bộ hệ điều hành. Chế độ chỉ đọc an toàn tuyệt đối (Không cho phép kill PID tùy ý).'}
           </p>
         </div>
 
         <div className="flex items-center space-x-3 text-xs font-mono">
-          {isRoot ? (
+          {canEdit ? (
             <span className="px-2.5 py-1 rounded-lg bg-teal-500/10 text-teal-400 border border-teal-500/20 flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5" /> Quyền Root (Cho phép dừng)
+              <ShieldCheck className="w-3.5 h-3.5" /> {isRoot ? 'Quyền Root (Cho phép dừng)' : 'Được cấp quyền dừng'}
             </span>
           ) : (
             <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
@@ -228,7 +227,7 @@ export const ProcessesView: React.FC<ProcessesViewProps> = ({ currentUser }) => 
                 <th className="py-3 px-4">CPU (%)</th>
                 <th className="py-3 px-4">RAM (RSS)</th>
                 <th className="py-3 px-4">Lệnh thực thi</th>
-                {isRoot && <th className="py-3 px-4 text-right">Thao tác</th>}
+                {canEdit && <th className="py-3 px-4 text-right">Thao tác</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -249,7 +248,7 @@ export const ProcessesView: React.FC<ProcessesViewProps> = ({ currentUser }) => 
                     <td className="py-3 px-4 text-slate-500 max-w-xs truncate" title={p.commandLine}>
                       {p.commandLine || p.name}
                     </td>
-                    {isRoot && (
+                    {canEdit && (
                       <td className="py-3 px-4 text-right whitespace-nowrap">
                         {isProtectedPid ? (
                           <span className="text-[10px] text-slate-500 italic px-2 py-0.5 rounded bg-slate-950/60 border border-slate-800 flex items-center gap-1 inline-flex">
@@ -274,7 +273,7 @@ export const ProcessesView: React.FC<ProcessesViewProps> = ({ currentUser }) => 
 
               {!isLoading && filteredProcesses.length === 0 && (
                 <tr>
-                  <td colSpan={isRoot ? 8 : 7} className="py-12 text-center text-slate-500 text-xs">
+                  <td colSpan={canEdit ? 8 : 7} className="py-12 text-center text-slate-500 text-xs">
                     Không tìm thấy tiến trình nào phù hợp.
                   </td>
                 </tr>

@@ -19,7 +19,7 @@ func NewWorkloadsHandler(svc *app.WorkloadService) *WorkloadsHandler {
 	return &WorkloadsHandler{svc: svc}
 }
 
-func (h *WorkloadsHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler) {
+func (h *WorkloadsHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler, dockerEditMiddleware, servicesEditMiddleware fiber.Handler) {
 	group := router.Group("/workloads", authMiddleware)
 
 	// Docker Containers (support both /containers and /docker)
@@ -27,16 +27,16 @@ func (h *WorkloadsHandler) RegisterRoutes(router fiber.Router, authMiddleware fi
 	group.Get("/docker", h.ListContainers)
 	group.Get("/containers/:id/logs", h.GetContainerLogs)
 	group.Get("/docker/:id/logs", h.GetContainerLogs)
-	group.Post("/containers/:name/action", h.ExecuteContainerAction)
-	group.Post("/docker/:name/action", h.ExecuteContainerAction)
+	group.Post("/containers/:name/action", dockerEditMiddleware, h.ExecuteContainerAction)
+	group.Post("/docker/:name/action", dockerEditMiddleware, h.ExecuteContainerAction)
 
 	// Systemd Services (support both /services and /systemd)
 	group.Get("/services", h.ListServices)
 	group.Get("/systemd", h.ListServices)
 	group.Get("/services/:name/logs", h.GetServiceLogs)
 	group.Get("/systemd/:name/logs", h.GetServiceLogs)
-	group.Post("/services/:name/action", h.ExecuteServiceAction)
-	group.Post("/systemd/:name/action", h.ExecuteServiceAction)
+	group.Post("/services/:name/action", servicesEditMiddleware, h.ExecuteServiceAction)
+	group.Post("/systemd/:name/action", servicesEditMiddleware, h.ExecuteServiceAction)
 }
 
 func (h *WorkloadsHandler) ListContainers(c fiber.Ctx) error {

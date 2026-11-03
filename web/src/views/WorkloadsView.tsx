@@ -22,6 +22,7 @@ import { LogModal } from '../components/LogModal'
 import { Pagination } from '../components/Pagination'
 import { Container, User } from '../types'
 import { getContainers, getContainerLogs, executeContainerAction } from '../lib/api'
+import { isUserRoot, canUserEditTab } from '../lib/permissions'
 
 interface WorkloadsViewProps {
   currentUser?: User | null
@@ -70,6 +71,9 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({ currentUser }) => 
     fetchWorkloads()
   }, [fetchWorkloads])
 
+  const isRoot = isUserRoot(currentUser)
+  const canEdit = canUserEditTab(currentUser, 'docker')
+
   // Filter logic: 100% host containers are observable
   const filteredContainers = containers.filter((c) => {
     const matchesSearch =
@@ -79,7 +83,7 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({ currentUser }) => 
 
     if (!matchesSearch) return false
     if (filterMode === 'running') return c.state === 'running'
-    if (filterMode === 'allowlisted') return c.isAllowlisted
+    if (filterMode === 'allowlisted') return canEdit && c.isAllowlisted && !c.isProtected
     return true
   })
 
@@ -241,11 +245,7 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({ currentUser }) => 
           const portStrings = (container.ports || []).map((p) =>
             p.publicPort ? `${p.publicPort}:${p.privatePort}/${p.type}` : `${p.privatePort}/${p.type}`
           )
-          const isRoot =
-            currentUser?.role === 'root' ||
-            currentUser?.role === 'admin' ||
-            currentUser?.username === 'stephen3103'
-          const canMutate = !container.isProtected && (isRoot || container.isAllowlisted)
+          const canMutate = !container.isProtected && (isRoot || (canEdit && container.isAllowlisted))
 
           return (
             <motion.div
@@ -278,11 +278,11 @@ export const WorkloadsView: React.FC<WorkloadsViewProps> = ({ currentUser }) => 
                     ) : canMutate ? (
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/20 flex items-center gap-1">
                         <ShieldCheck className="w-3 h-3" />
-                        {isRoot ? 'Được phép điều khiển (Root)' : 'Allowlist (Cho phép mutate)'}
+                        {isRoot ? 'Được phép điều khiển (Root)' : 'Được cấp quyền điều khiển'}
                       </span>
                     ) : (
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700/60">
-                        Chỉ quan sát (Chưa gán quyền)
+                        Chỉ quan sát
                       </span>
                     )}
                   </div>

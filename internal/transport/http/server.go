@@ -180,7 +180,7 @@ func (s *Server) setupRoutes() {
 	// Register System Routes (History, Processes, Alerts, Power-status)
 	updateSvc := systemInfra.NewUpdateService(s.cfg, s.db)
 	sysH := systemTransport.NewSystemHandler(s.telemetrySvc, updateSvc, s.procCollector, s.historyStore, s.alertsEngine)
-	sysH.RegisterRoutes(api, authMiddleware)
+	sysH.RegisterRoutes(api, authMiddleware, s.requireEditTab("processes"))
 
 	// Register Audit Routes (Immutable Audit Trail)
 	if s.auditSvc != nil {
@@ -191,30 +191,30 @@ func (s *Server) setupRoutes() {
 	// Register Workloads Routes (100% Docker & systemd Observability & Guardrail Execution)
 	if s.workloadSvc != nil {
 		workloadH := workloadTransport.NewWorkloadsHandler(s.workloadSvc)
-		workloadH.RegisterRoutes(api, authMiddleware)
+		workloadH.RegisterRoutes(api, authMiddleware, s.requireEditTab("docker"), s.requireEditTab("services"))
 	}
 
 	// Register Tasks Routes (Preset Tasks & Safe SQLite Backup)
 	if s.taskSvc != nil {
 		tasksH := tasksTransport.NewTasksHandler(s.taskSvc)
-		tasksH.RegisterRoutes(api, authMiddleware)
+		tasksH.RegisterRoutes(api, authMiddleware, s.requireEditTab("tasks"))
 	}
 
 	// Register Scoped File Manager Routes
 	if s.fileSvc != nil {
 		filesH := filesTransport.NewFilesHandler(s.fileSvc)
-		filesH.RegisterRoutes(api, authMiddleware)
+		filesH.RegisterRoutes(api, authMiddleware, s.requireEditTab("files"))
 	}
 
 	// Register Firewall (UFW) Routes
 	firewallSvc := firewall.NewService()
 	firewallH := firewall.NewHandler(firewallSvc, s.auditSvc)
-	firewallH.RegisterRoutes(api, authMiddleware)
+	firewallH.RegisterRoutes(api, authMiddleware, s.requireEditTab("firewall"))
 
 	// Register Web Server & Reverse Proxy (Nginx) Routes
 	nginxSvc := nginx.NewService()
 	nginxH := nginx.NewHandler(nginxSvc, s.auditSvc)
-	nginxH.RegisterRoutes(api, authMiddleware)
+	nginxH.RegisterRoutes(api, authMiddleware, s.requireEditTab("nginx"))
 
 	// Register Realtime WebSocket Route with alerts integration
 	wsH := wsTransport.NewMetricsWSHandler(s.telemetrySvc, s.alertsEngine, s.jwtManager, s.cfg.AllowedOrigins)
@@ -263,6 +263,39 @@ func (s *Server) setupRoutes() {
 				return c.Send(indexData)
 			},
 		}))
+	}
+}
+
+func (s *Server) requireEditTab(tab string) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		userID, _ := c.Locals("userId").(string)
+		username, _ := c.Locals("username").(string)
+		role, _ := c.Locals("role").(string)
+
+		// Root / Admin / Primary admin accounts always bypass
+		if strings.EqualFold(role, "root") || strings.EqualFold(role, "admin") ||
+			username == "stephen3103" || username == "tranducanh31032006@gmail.com" || username == "piganh408@gmail.com" {
+			return c.Next()
+		}
+
+		// Non-root: verify granular edit permission from database
+		if s.authSvc != nil && userID != "" {
+			user, err := s.authSvc.GetMe(c.Context(), userID)
+			if err == nil && user != nil {
+				if user.IsRoot() || user.CanEditTab(tab) {
+					return c.Next()
+				}
+			}
+		}
+
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"data": nil,
+			"error": fiber.Map{
+				"code":    "PERMISSION_DENIED",
+				"message": fmt.Sprintf("Tài khoản của bạn chỉ có quyền quan sát, không được phép thực hiện thao tác tại mục '%s'.", tab),
+			},
+			"meta": fiber.Map{"requestId": c.Locals(string(logging.RequestIDKey))},
+		})
 	}
 }
 

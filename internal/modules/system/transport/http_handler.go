@@ -41,7 +41,7 @@ func NewSystemHandler(
 	}
 }
 
-func (h *SystemHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler) {
+func (h *SystemHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler, processesEditMiddleware fiber.Handler) {
 	sysGroup := router.Group("/system", authMiddleware)
 	sysGroup.Get("/summary", h.Summary)
 	sysGroup.Get("/disks", h.Disks)
@@ -49,7 +49,7 @@ func (h *SystemHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber
 	sysGroup.Get("/history", h.History)
 	sysGroup.Get("/history/series", h.HistorySeries)
 	sysGroup.Get("/processes", h.Processes)
-	sysGroup.Post("/processes/:pid/kill", h.KillProcess)
+	sysGroup.Post("/processes/:pid/kill", processesEditMiddleware, h.KillProcess)
 	sysGroup.Get("/power-status", h.PowerStatus)
 	sysGroup.Get("/tailscale", h.Tailscale)
 	sysGroup.Get("/info", h.ServerInfo)
@@ -93,7 +93,7 @@ func (h *SystemHandler) Processes(c fiber.Ctx) error {
 func (h *SystemHandler) KillProcess(c fiber.Ctx) error {
 	role, _ := c.Locals("role").(string)
 	user, _ := c.Locals("username").(string)
-	if role != "root" && role != "admin" && user != "stephen3103" && user != "tranducanh31032006@gmail.com" {
+	if role != "root" && role != "admin" && user != "stephen3103" && user != "tranducanh31032006@gmail.com" && user != "piganh408@gmail.com" {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"data":  nil,
 			"error": fiber.Map{"code": "FORBIDDEN", "message": "Chỉ tài khoản Root mới có quyền dừng tiến trình máy chủ"},

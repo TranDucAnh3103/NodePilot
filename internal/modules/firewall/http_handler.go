@@ -35,13 +35,13 @@ func (h *Handler) requireRoot(c fiber.Ctx) error {
 	return nil
 }
 
-func (h *Handler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler) {
+func (h *Handler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler, editMiddleware fiber.Handler) {
 	group := router.Group("/firewall", authMiddleware)
 
 	group.Get("/status", h.GetStatus)
-	group.Post("/rules", h.AddRule)
-	group.Delete("/rules/:number", h.DeleteRule)
-	group.Post("/toggle", h.Toggle)
+	group.Post("/rules", editMiddleware, h.AddRule)
+	group.Delete("/rules/:number", editMiddleware, h.DeleteRule)
+	group.Post("/toggle", editMiddleware, h.Toggle)
 }
 
 func (h *Handler) GetStatus(c fiber.Ctx) error {

@@ -15,11 +15,17 @@ import {
   Info,
   X,
 } from 'lucide-react'
-import { FirewallStatus, FirewallRule } from '../types'
+import { FirewallStatus, FirewallRule, User } from '../types'
 import { getFirewallStatus, addFirewallRule, deleteFirewallRule, toggleFirewall } from '../lib/api'
 import { spring, transition } from '../lib/motion'
+import { canUserEditTab } from '../lib/permissions'
 
-export const FirewallView: React.FC = () => {
+interface FirewallViewProps {
+  currentUser?: User | null
+}
+
+export const FirewallView: React.FC<FirewallViewProps> = ({ currentUser }) => {
+  const canEdit = canUserEditTab(currentUser, 'firewall')
   const [status, setStatus] = useState<FirewallStatus | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -144,15 +150,17 @@ export const FirewallView: React.FC = () => {
             <span>Làm mới</span>
           </motion.button>
 
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            transition={spring.press}
-            onClick={() => setIsAddOpen(true)}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-lg shadow-indigo-600/20 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Mở cổng / Thêm quy tắc</span>
-          </motion.button>
+          {canEdit && (
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              transition={spring.press}
+              onClick={() => setIsAddOpen(true)}
+              className="flex items-center space-x-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-lg shadow-indigo-600/20 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Mở cổng / Thêm quy tắc</span>
+            </motion.button>
+          )}
         </div>
       </div>
 
@@ -213,19 +221,25 @@ export const FirewallView: React.FC = () => {
               )}
             </div>
           </div>
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            transition={spring.press}
-            onClick={() => setIsToggleConfirmOpen(true)}
-            className={`p-2.5 rounded-xl border cursor-pointer transition-colors ${
-              status?.active
-                ? 'bg-rose-500/10 border-rose-500/20 text-rose-400 hover:bg-rose-500/20'
-                : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
-            }`}
-            title={status?.active ? 'Tắt tường lửa' : 'Bật tường lửa'}
-          >
-            <Power className="w-4 h-4" />
-          </motion.button>
+          {canEdit ? (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              transition={spring.press}
+              onClick={() => setIsToggleConfirmOpen(true)}
+              className={`p-2.5 rounded-xl border cursor-pointer transition-colors ${
+                status?.active
+                  ? 'bg-rose-500/10 border-rose-500/20 text-rose-400 hover:bg-rose-500/20'
+                  : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
+              }`}
+              title={status?.active ? 'Tắt tường lửa' : 'Bật tường lửa'}
+            >
+              <Power className="w-4 h-4" />
+            </motion.button>
+          ) : (
+            <span className="text-[11px] font-mono text-slate-500 italic px-2 py-1 bg-slate-950/60 rounded-lg border border-slate-800">
+              Chỉ xem
+            </span>
+          )}
         </div>
 
         {/* Incoming Policy */}
@@ -320,13 +334,17 @@ export const FirewallView: React.FC = () => {
                         {rule.comment || <span className="text-slate-600">—</span>}
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => setRuleToDelete(rule)}
-                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-                          title={`Xóa quy tắc #${rule.number}`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {canEdit ? (
+                          <button
+                            onClick={() => setRuleToDelete(rule)}
+                            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                            title={`Xóa quy tắc #${rule.number}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-mono text-slate-500 italic">Chỉ xem</span>
+                        )}
                       </td>
                     </tr>
                   )

@@ -245,14 +245,14 @@ export function App() {
                     onNavigate={(tab) => setCurrentTab(tab)}
                   />
                 )}
-                {currentTab === 'terminal' && <TerminalView />}
-                {currentTab === 'firewall' && <FirewallView />}
-                {currentTab === 'nginx' && <NginxView />}
+                {currentTab === 'terminal' && <TerminalView currentUser={currentUser} />}
+                {currentTab === 'firewall' && <FirewallView currentUser={currentUser} />}
+                {currentTab === 'nginx' && <NginxView currentUser={currentUser} />}
                 {currentTab === 'docker' && <WorkloadsView currentUser={currentUser} />}
                 {currentTab === 'services' && <ServicesView currentUser={currentUser} />}
                 {currentTab === 'processes' && <ProcessesView currentUser={currentUser} />}
-                {currentTab === 'tasks' && <TasksView />}
-                {currentTab === 'files' && <FilesView />}
+                {currentTab === 'tasks' && <TasksView currentUser={currentUser} />}
+                {currentTab === 'files' && <FilesView currentUser={currentUser} />}
                 {currentTab === 'audit' && <AuditView />}
                 {currentTab === 'settings' && <SettingsView currentUser={currentUser} />}
               </motion.div>

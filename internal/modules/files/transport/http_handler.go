@@ -35,18 +35,18 @@ func (h *FilesHandler) getUserInfo(c fiber.Ctx) (isRoot bool, canEdit bool, allo
 	return isRoot, canEdit, nil, userID, username
 }
 
-func (h *FilesHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler) {
+func (h *FilesHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler, editMiddleware fiber.Handler) {
 	files := router.Group("/files", authMiddleware)
 
 	files.Get("/bookmarks", h.Bookmarks)
 	files.Get("/list", h.List)
 	files.Get("/content", h.GetContent)
-	files.Put("/content", h.SaveContent)
-	files.Post("/folder", h.CreateFolder)
-	files.Post("/file", h.CreateFile)
-	files.Delete("/path", h.DeletePath)
-	files.Post("/rename", h.RenamePath)
-	files.Post("/upload", h.Upload)
+	files.Put("/content", editMiddleware, h.SaveContent)
+	files.Post("/folder", editMiddleware, h.CreateFolder)
+	files.Post("/file", editMiddleware, h.CreateFile)
+	files.Delete("/path", editMiddleware, h.DeletePath)
+	files.Post("/rename", editMiddleware, h.RenamePath)
+	files.Post("/upload", editMiddleware, h.Upload)
 	files.Get("/download", h.Download)
 }
 

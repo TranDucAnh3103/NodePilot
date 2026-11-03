@@ -18,16 +18,23 @@ import {
   HardDrive,
 } from 'lucide-react'
 import { spring, transition } from '../lib/motion'
-import { TaskPreset, TaskExecution } from '../types'
+import { TaskPreset, TaskExecution, User } from '../types'
 import { getTaskPresets, getTaskExecutions, triggerTask, cancelTask } from '../lib/api'
+import { isUserRoot, canUserEditTab } from '../lib/permissions'
 import { ConfirmModal } from '../components/ConfirmModal'
 
-export const TasksView: React.FC = () => {
+interface TasksViewProps {
+  currentUser?: User | null
+}
+
+export const TasksView: React.FC<TasksViewProps> = ({ currentUser }) => {
   const [presets, setPresets] = useState<TaskPreset[]>([])
   const [executions, setExecutions] = useState<TaskExecution[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  const canEdit = canUserEditTab(currentUser, 'tasks')
 
   // Trigger modal state
   const [activePreset, setActivePreset] = useState<TaskPreset | null>(null)
@@ -237,25 +244,31 @@ export const TasksView: React.FC = () => {
                   )}
                 </span>
 
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  transition={spring.press}
-                  disabled={isRunning || isProcessing}
-                  onClick={() => setActivePreset(p)}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center space-x-1.5"
-                >
-                  {isRunning ? (
-                    <>
-                      <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Đang thực thi...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-3.5 h-3.5" />
-                      <span>Kích hoạt tác vụ</span>
-                    </>
-                  )}
-                </motion.button>
+                {canEdit ? (
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    transition={spring.press}
+                    disabled={isRunning || isProcessing}
+                    onClick={() => setActivePreset(p)}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center space-x-1.5"
+                  >
+                    {isRunning ? (
+                      <>
+                        <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Đang thực thi...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5" />
+                        <span>Kích hoạt tác vụ</span>
+                      </>
+                    )}
+                  </motion.button>
+                ) : (
+                  <span className="text-[11px] font-mono text-slate-500 italic px-2.5 py-1 bg-slate-950/60 rounded-xl border border-slate-800">
+                    Chỉ xem
+                  </span>
+                )}
               </div>
             </motion.div>
           )

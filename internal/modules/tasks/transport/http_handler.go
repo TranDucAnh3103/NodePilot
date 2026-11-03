@@ -16,13 +16,13 @@ func NewTasksHandler(svc *app.TaskService) *TasksHandler {
 	return &TasksHandler{svc: svc}
 }
 
-func (h *TasksHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler) {
+func (h *TasksHandler) RegisterRoutes(router fiber.Router, authMiddleware fiber.Handler, tasksEditMiddleware fiber.Handler) {
 	tasks := router.Group("/tasks", authMiddleware)
 	tasks.Get("/presets", h.ListPresets)
 	tasks.Get("/executions", h.ListExecutions)
 	tasks.Get("/executions/:id", h.GetExecution)
-	tasks.Post("/executions", h.TriggerExecution)
-	tasks.Post("/executions/:id/cancel", h.CancelExecution)
+	tasks.Post("/executions", tasksEditMiddleware, h.TriggerExecution)
+	tasks.Post("/executions/:id/cancel", tasksEditMiddleware, h.CancelExecution)
 }
 
 func (h *TasksHandler) ListPresets(c fiber.Ctx) error {

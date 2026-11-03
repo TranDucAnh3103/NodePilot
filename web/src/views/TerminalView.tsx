@@ -17,12 +17,15 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { getAccessToken, buildApiUrl } from '../lib/api'
 import { transition, spring } from '../lib/motion'
+import { User } from '../types'
+import { isUserRoot, canUserEditTab } from '../lib/permissions'
 
 interface TerminalViewProps {
-  isRoot?: boolean
+  currentUser?: User | null
 }
 
-export const TerminalView: React.FC<TerminalViewProps> = ({ isRoot = true }) => {
+export const TerminalView: React.FC<TerminalViewProps> = ({ currentUser }) => {
+  const isAuthorized = isUserRoot(currentUser) || canUserEditTab(currentUser, 'terminal')
   const terminalRef = useRef<HTMLDivElement>(null)
   const termInstanceRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -155,6 +158,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ isRoot = true }) => 
   }, [])
 
   useEffect(() => {
+    if (!isAuthorized) return
     connectTerminal()
 
     const handleResize = () => {
@@ -173,7 +177,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ isRoot = true }) => 
         termInstanceRef.current.dispose()
       }
     }
-  }, [connectTerminal])
+  }, [connectTerminal, isAuthorized])
 
   // Fit terminal when fullscreen changes
   useEffect(() => {
@@ -200,13 +204,13 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ isRoot = true }) => 
     }
   }
 
-  if (!isRoot) {
+  if (!isAuthorized) {
     return (
       <div className="p-8 bg-slate-900/60 border border-slate-800 rounded-2xl text-center space-y-4">
         <ShieldAlert className="w-12 h-12 text-amber-400 mx-auto" />
         <h3 className="text-base font-bold text-slate-100">Truy Cập Bị Giới Hạn</h3>
         <p className="text-xs text-slate-400 max-w-md mx-auto">
-          Web Terminal Console cung cấp quyền shell tương tác trực tiếp tới máy chủ Home Server và chỉ dành riêng cho tài khoản quản trị tối cao (ROOT).
+          Web Terminal Console cung cấp quyền shell tương tác trực tiếp tới máy chủ Home Server và chỉ dành riêng cho tài khoản quản trị tối cao (ROOT) hoặc người dùng được cấp quyền.
         </p>
       </div>
     )
