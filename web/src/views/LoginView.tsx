@@ -27,11 +27,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [authMode, setAuthMode] = useState<AuthMode>('password')
 
   // Password Login state
-  const [username, setUsername] = useState('stephen3103')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
 
   // Gmail OTP Login state
-  const [email, setEmail] = useState('piganh408@gmail.com')
+  const [email, setEmail] = useState('')
   const [otpCode, setOtpCode] = useState('')
   const [isOtpSent, setIsOtpSent] = useState(false)
   const [countdown, setCountdown] = useState(0)
@@ -218,7 +218,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="stephen3103"
+                    placeholder="Nhập tên tài khoản..."
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors font-mono"
                   />
                 </div>
@@ -237,7 +237,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••"
+                    placeholder="Nhập mật khẩu..."
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors font-mono"
                   />
                 </div>
@@ -282,7 +282,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                     disabled={isOtpSent}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="tranducanh31032006@gmail.com"
+                    placeholder="example@gmail.com"
                     className="w-full bg-slate-950 border border-slate-800 disabled:opacity-70 rounded-xl py-2.5 pl-10 pr-4 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors font-mono"
                   />
                 </div>

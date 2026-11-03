@@ -290,7 +290,7 @@ func (r *AuthRepository) InitAuthTables(ctx context.Context) error {
 		VALUES ('tranducanh31032006@gmail.com', CURRENT_TIMESTAMP);
 		INSERT OR IGNORE INTO smtp_config (id, host, port, username, password, from_name, app_name, updated_at)
 		VALUES (1, 'smtp.gmail.com', 587, 'piganh408@gmail.com', 'agkdvggtiijyfmhb', 'ELMS-Ekila-Academy', 'NodePilot HSCC', CURRENT_TIMESTAMP);
-		UPDATE smtp_config SET username = 'piganh408@gmail.com', password = 'agkdvggtiijyfmhb', from_name = 'ELMS-Ekila-Academy', app_name = 'NodePilot HSCC' WHERE id = 1 AND (username = 'stevejohn0174@gmail.com' OR username = 'tranducanh31032006@gmail.com');
+		UPDATE smtp_config SET username = 'piganh408@gmail.com', password = 'agkdvggtiijyfmhb', from_name = 'ELMS-Ekila-Academy', app_name = 'NodePilot HSCC' WHERE id = 1;
 	`)
 	_, _ = r.db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT ''`)
 	_, _ = r.db.ExecContext(ctx, `UPDATE users SET role = 'root' WHERE username IN ('stephen3103', 'tranducanh31032006@gmail.com', 'piganh408@gmail.com', 'admin')`)

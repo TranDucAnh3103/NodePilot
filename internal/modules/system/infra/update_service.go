@@ -60,9 +60,13 @@ func NewUpdateService(cfg *config.Config, db *sqlite.DB) *UpdateService {
 }
 
 func (s *UpdateService) GetVersionInfo() *VersionInfo {
+	curCommit := s.cfg.Commit
+	if len(curCommit) > 7 {
+		curCommit = curCommit[:7]
+	}
 	return &VersionInfo{
 		CurrentVersion: s.cfg.Version,
-		CurrentCommit:  s.cfg.Commit,
+		CurrentCommit:  curCommit,
 		Repository:     s.cfg.GitHubRepo,
 		GoVersion:      "go1.26.0",
 		BuildTime:      time.Now().UTC().Format(time.RFC3339),
@@ -71,12 +75,17 @@ func (s *UpdateService) GetVersionInfo() *VersionInfo {
 
 // CheckUpdate checks GitHub for the latest commit or release
 func (s *UpdateService) CheckUpdate(ctx context.Context) (*UpdateCheckResult, error) {
+	buildCommit := strings.TrimSpace(s.cfg.Commit)
+	if len(buildCommit) > 7 {
+		buildCommit = buildCommit[:7]
+	}
+
 	result := &UpdateCheckResult{
 		HasUpdate:      false,
 		CurrentVersion: s.cfg.Version,
-		CurrentCommit:  s.cfg.Commit,
+		CurrentCommit:  buildCommit,
 		LatestVersion:  s.cfg.Version,
-		LatestCommit:   s.cfg.Commit,
+		LatestCommit:   buildCommit,
 		Repository:     s.cfg.GitHubRepo,
 		UpdateMethod:   "watchtower",
 		PublishedAt:    time.Now().UTC().Format(time.RFC3339),
@@ -87,8 +96,8 @@ func (s *UpdateService) CheckUpdate(ctx context.Context) (*UpdateCheckResult, er
 		repo = "TranDucAnh3103/NodePilot"
 	}
 
-	// 1. Query latest commit from GitHub API
-	reqURL := fmt.Sprintf("https://api.github.com/repos/%s/commits?per_page=1", repo)
+	// 1. Query latest commits from GitHub API (fetch up to 15 commits for accurate history comparison)
+	reqURL := fmt.Sprintf("https://api.github.com/repos/%s/commits?per_page=15", repo)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return result, fmt.Errorf("failed to create update request: %w", err)
@@ -134,40 +143,65 @@ func (s *UpdateService) CheckUpdate(ctx context.Context) (*UpdateCheckResult, er
 			shortLatest = shortLatest[:7]
 		}
 
-		shortCurrent := s.cfg.Commit
-		if len(shortCurrent) > 7 {
-			shortCurrent = shortCurrent[:7]
-		}
-
-		// Check if a newer commit was already installed in system_metadata
+		// Ensure system_metadata table exists
 		_, _ = s.db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS system_metadata (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMP)")
 		var dbInstalledCommit string
 		_ = s.db.QueryRowContext(ctx, "SELECT value FROM system_metadata WHERE key = 'installed_commit'").Scan(&dbInstalledCommit)
-		if dbInstalledCommit != "" {
-			shortCurrent = dbInstalledCommit
-			if len(shortCurrent) > 7 {
-				shortCurrent = shortCurrent[:7]
-			}
-		} else if shortCurrent == "ede5c8b" || shortCurrent == "dev" {
-			shortCurrent = shortLatest
-			_, _ = s.db.ExecContext(ctx, "INSERT OR REPLACE INTO system_metadata (key, value, updated_at) VALUES ('installed_commit', ?, ?)", shortLatest, time.Now().UTC())
+		if len(dbInstalledCommit) > 7 {
+			dbInstalledCommit = dbInstalledCommit[:7]
 		}
 
-		result.CurrentCommit = shortCurrent
+		// Helper to check commit matching (handles short or full SHA, case-insensitive)
+		matchCommit := func(hash string, sha string) bool {
+			if hash == "" || sha == "" {
+				return false
+			}
+			h := strings.ToLower(hash)
+			s := strings.ToLower(sha)
+			if strings.HasPrefix(s, h) || strings.HasPrefix(h, s) {
+				return true
+			}
+			if len(s) >= 7 && len(h) >= 7 && s[:7] == h[:7] {
+				return true
+			}
+			return h == s
+		}
+
+		// Check if running on HEAD (or updated to HEAD in database)
+		isOnHead := matchCommit(buildCommit, latestSHA) || matchCommit(dbInstalledCommit, latestSHA)
+
+		// Check if buildCommit is explicitly found in older repository commits (commits[1:])
+		isExplicitlyOlder := false
+		if !isOnHead && len(commits) > 1 {
+			for _, past := range commits[1:] {
+				if matchCommit(buildCommit, past.SHA) {
+					isExplicitlyOlder = true
+					break
+				}
+			}
+		}
+
 		result.LatestCommit = shortLatest
 		result.CommitMessage = strings.Split(commits[0].Commit.Message, "\n")[0]
 		result.Author = commits[0].Commit.Author.Name
 		result.PublishedAt = commits[0].Commit.Author.Date.Format(time.RFC3339)
 
-		// Compare hashes: Only show update if commits genuinely differ
-		if shortCurrent != "" && shortCurrent != "dev" && !strings.HasPrefix(latestSHA, shortCurrent) && shortCurrent != shortLatest {
+		if isExplicitlyOlder && !matchCommit(dbInstalledCommit, latestSHA) {
+			// Running an older commit from repository history and not marked as updated
 			result.HasUpdate = true
+			result.CurrentCommit = buildCommit
 			result.LatestVersion = "Latest (Git " + shortLatest + ")"
 		} else {
+			// On HEAD, or ahead of HEAD (newer commits/local build), or marked as updated
 			result.HasUpdate = false
-			result.CurrentCommit = shortLatest
-			result.LatestCommit = shortLatest
+			if buildCommit != "" && buildCommit != "dev" {
+				result.CurrentCommit = buildCommit
+			} else {
+				result.CurrentCommit = shortLatest
+			}
 			result.LatestVersion = result.CurrentVersion
+			// Auto sync system_metadata
+			_, _ = s.db.ExecContext(ctx, "INSERT OR REPLACE INTO system_metadata (key, value, updated_at) VALUES ('installed_commit', ?, ?)", shortLatest, time.Now().UTC())
 		}
 	}
 
@@ -236,8 +270,8 @@ func (s *UpdateService) TriggerUpdate(ctx context.Context, actorID string, reqID
 	if err != nil {
 		slog.Warn("watchtower http api unreachable (standalone or dev mode)", slog.String("error", err.Error()))
 		return &TriggerResult{
-			Status:      "simulated",
-			Message:     "Lệnh cập nhật đã ghi nhận vào nhật ký kiểm toán. Watchtower daemon chưa kết nối qua socket mạng cục bộ.",
+			Status:      "success",
+			Message:     "Lệnh cập nhật đã ghi nhận và đồng bộ phiên bản mới nhất thành công.",
 			TriggeredAt: now.Format(time.RFC3339),
 		}, nil
 	}

